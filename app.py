@@ -1,3 +1,4 @@
+import time
 from flask import Flask, render_template, request, jsonify, send_file
 import os
 from werkzeug.utils import secure_filename
@@ -14,8 +15,16 @@ import zipfile
 import re
 from flask_cors import CORS
 from ocr_processor import process_folder
+from speechbubble import SpeechBubbleProcessor
+from docx import Document
+from google import genai
+from google.genai import types
+from dotenv import load_dotenv
 
-app = Flask(__name__)
+# Load environment variables
+load_dotenv()
+
+app = Flask(__name__, static_folder='public')
 CORS(app)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max-limit
@@ -24,8 +33,6 @@ app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max-limit
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
-# Thêm cấu hình cho Gemini API key
-app.config['GEMINI_API_KEY'] = os.getenv('GEMINI_API_KEY', '')
 
 # Hàm xử lý lỗi chung
 def handle_error(e):
@@ -52,17 +59,21 @@ def index():
 
 @app.route('/function/<function_name>')
 def function_page(function_name):
-    titles = {
-        'changeImage': 'Chuyển đổi định dạng ảnh',
-        'cutmergeimage': 'Cắt và ghép ảnh',
-        'dowloaf': 'Tải ảnh từ web',
-        'mergeWord': 'Gộp file Word',
-        'renameImage': 'Đổi tên ảnh',
-        'ocr': 'Nhận dạng chữ trong ảnh (OCR)'
+    templates = {
+        'changeImage': 'functions/changeimage.html',
+        'cutmergeimage': 'functions/cutmergeimage.html',
+        'dowloaf': 'functions/dowloaf.html',
+        'mergeWord': 'functions/mergeword.html',
+        'renameImage': 'functions/renameimage.html',
+        'ocr': 'functions/ocr.html',
+        'translate': 'functions/translate.html',
+        'remove_speech_bubbles': 'functions/speechbubble.html'
     }
-    return render_template('function.html', 
-                         function_name=function_name,
-                         function_title=titles.get(function_name, 'Unknown Function'))
+    
+    if function_name not in templates:
+        return jsonify({'error': 'Chức năng không tồn tại'}), 404
+        
+    return render_template(templates[function_name])
 
 @app.route('/execute/changeImage', methods=['POST'])
 def execute_change_image():
@@ -387,60 +398,90 @@ def execute_rename_image():
 
 @app.route('/execute/ocr', methods=['POST'])
 def execute_ocr():
-    if 'files' not in request.files:
-        return jsonify({'error': 'Không có file được tải lên'})
-    
-    files = request.files.getlist('files')
-    if not files or files[0].filename == '':
-        return jsonify({'error': 'Không có file được chọn'})
-    
-    # Lấy các tham số bổ sung
-    api_key = request.form.get('api_key', app.config['GEMINI_API_KEY'])
-    genre = request.form.get('genre')  # Thể loại truyện
-    target_langs = request.form.getlist('target_langs[]')  # Danh sách ngôn ngữ đích
-    
-    # Tạo thư mục tạm thời
-    temp_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'temp_ocr')
-    if os.path.exists(temp_dir):
-        shutil.rmtree(temp_dir)
-    os.makedirs(temp_dir)
-    
     try:
-        # Lưu các file
+        files = request.files.getlist('files')
+        api_key = request.form.get('api_key')
+        
+        if not files or not api_key:
+            return jsonify({'error': 'Vui lòng cung cấp ảnh và API key'})
+        
+        # Khởi tạo client Gemini với API key
+        client = genai.Client(api_key=api_key)
+        model = client.models
+        
+        # Tạo một tài liệu Word mới
+        doc = Document()
+        doc.add_heading('Cám ơn đã sử dụng tôi iu bạn có thể mua ủng hộ ly cafe để web phát triển hơn...', 0)
+        
+        extracted_texts = []
+        
+        # Xử lý từng file
         for file in files:
-            if file.filename:
-                filename = secure_filename(file.filename)
-                file_path = os.path.join(temp_dir, filename)
-                file.save(file_path)
+            if not file.filename:
+                continue
+                
+            # Đọc hình ảnh và chuyển đổi thành bytes
+            image_bytes = file.read()
+            
+            # Tạo prompt cho việc nhận dạng văn bản
+            prompt = """
+                Hãy nhận dạng và liệt kê tất cả các đoạn văn bản trong các bóng thoại của ảnh truyện tranh này.
+                Mỗi bóng thoại sẽ được đánh số thứ tự và nội dung của nó.
+                Chỉ trả về nội dung văn bản, không cần giải thích thêm.
+                Format:
+                ...
+                ...
+                ...
+              """
+            
+            # Gửi yêu cầu đến Gemini API
+            response = model.generate_content(
+                model="gemini-2.0-flash",
+                contents=[
+                    {"text": prompt},
+                    {"inline_data": {"mime_type": "image/jpeg", "data": image_bytes}}
+                ],
+                config={"temperature": 0.4}
+            )
+            
+            # Lấy văn bản được nhận dạng
+            extracted_text = response.text
+            
+            if extracted_text:
+                # Thêm văn bản được trích xuất
+                doc.add_paragraph(extracted_text)
+                
+                # Thêm dòng ngăn cách
+                doc.add_paragraph('---')
+                
+                extracted_texts.append({
+                    'filename': file.filename,
+                    'text': extracted_text
+                })
         
-        # Xử lý OCR với các tham số mới
-        output_files = process_folder(temp_dir, api_key, genre, target_langs)
-        
-        # Tạo file zip chứa kết quả
-        zip_path = os.path.join(app.config['UPLOAD_FOLDER'], 'ocr_result.zip')
-        with zipfile.ZipFile(zip_path, 'w') as zipf:
-            # Thêm các file Word kết quả cho từng ngôn ngữ
-            for lang, files in output_files.items():
-                for file in files:
-                    arcname = os.path.basename(file)
-                    zipf.write(file, arcname)
-        
-        # Xóa thư mục tạm
-        shutil.rmtree(temp_dir)
+        # Lưu tài liệu
+        output_filename = f'VBCĐ_{int(time.time())}.docx'
+        output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
+        doc.save(output_path)
         
         return jsonify({
-            'message': 'Xử lý OCR thành công!',
-            'output_files': ['ocr_result.zip'],
-            'word_files': {
-                lang: [os.path.basename(f) for f in files]
-                for lang, files in output_files.items()
-            }
+            'success': True,
+            'word_files': {'all': [output_filename]},
+            'extracted_texts': extracted_texts
         })
         
     except Exception as e:
-        if os.path.exists(temp_dir):
-            shutil.rmtree(temp_dir)
-        return handle_error(e)
+        return jsonify({'error': str(e)})
+
+# Hàm chuyển đổi mã ngôn ngữ thành tên
+def getLangName(code):
+    langs = {
+        'vie': 'Tiếng Việt',
+        'eng': 'Tiếng Anh',
+        'jpn': 'Tiếng Nhật',
+        'kor': 'Tiếng Hàn'
+    }
+    return langs.get(code, code)
 
 @app.route('/execute/merge_ocr', methods=['POST'])
 def execute_merge_ocr():
@@ -566,6 +607,114 @@ def internal_error(e):
 @app.errorhandler(404)
 def not_found(e):
     return jsonify({'error': 'Không tìm thấy trang'}), 404
+
+@app.route('/remove_speech_bubbles', methods=['GET', 'POST'])
+def process_speech_bubbles():
+    if request.method == 'GET':
+        return render_template('functions/speechbubble.html')
+    
+    try:
+        # Kiểm tra file upload
+        if 'files' not in request.files:
+            return jsonify({'error': 'Không tìm thấy file nào được tải lên'}), 400
+            
+        files = request.files.getlist('files')
+        if not files or files[0].filename == '':
+            return jsonify({'error': 'Không có file nào được chọn'}), 400
+            
+        # Lấy API key từ form hoặc sử dụng API key mặc định
+        api_key = request.form.get('api_key', app.config['GEMINI_API_KEY'])
+        
+        # Cấu hình API key mới nếu có
+        if api_key != app.config['GEMINI_API_KEY']:
+            genai.Client(api_key=api_key)
+            
+        # Tạo thư mục tạm thời
+        temp_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'temp')
+        if not os.path.exists(temp_dir):
+            os.makedirs(temp_dir)
+            
+        # Xóa các file cũ trong thư mục tạm
+        for file in os.listdir(temp_dir):
+            os.remove(os.path.join(temp_dir, file))
+            
+        # Lưu các file upload
+        for file in files:
+            if file and allowed_file(file.filename):
+                file.save(os.path.join(temp_dir, file.filename))
+                
+        # Xử lý ảnh
+        processor = SpeechBubbleProcessor(api_key)
+        output_dir = processor.process_folder(temp_dir)
+        
+        # Tạo file zip
+        zip_path = os.path.join(app.config['UPLOAD_FOLDER'], 'processed_images.zip')
+        with zipfile.ZipFile(zip_path, 'w') as zipf:
+            for root, dirs, files in os.walk(output_dir):
+                for file in files:
+                    zipf.write(os.path.join(root, file), file)
+                    
+        return jsonify({
+            'success': True,
+            'message': 'Xử lý ảnh thành công',
+            'download_url': url_for('download_file', filename='processed_images.zip', _external=True)
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/changeImage')
+def change_image():
+    return render_template('functions/changeimage.html')
+
+@app.route('/cutmergeimage')
+def cut_merge_image():
+    return render_template('functions/cutmergeimage.html')
+
+@app.route('/dowloaf')
+def download_image():
+    return render_template('functions/dowloaf.html')
+
+@app.route('/mergeword')
+def merge_word():
+    return render_template('functions/mergeword.html')
+
+@app.route('/renameimage')
+def rename_image():
+    return render_template('functions/renameimage.html')
+
+@app.route('/ocr')
+def ocr():
+    return render_template('functions/ocr.html')
+
+@app.route('/translate')
+def translate():
+    return render_template('functions/translate.html')
+
+@app.route('/remove_speech_bubbles')
+def remove_speech_bubbles():
+    return render_template('functions/speechbubble.html')
+
+@app.route('/test_api_key', methods=['POST'])
+def test_api_key():
+    try:
+        data = request.json
+        api_key = data.get('api_key')
+        
+        if not api_key:
+            return jsonify({'error': 'API key không được cung cấp'})
+        
+        client = genai.Client(api_key=api_key)
+        
+        # Tạo một tin nhắn đơn giản để kiểm tra API key
+        response = client.models.generate_content(
+            model="gemini-2.0-flash", contents="Explain how AI works in a few words"
+        )
+        
+        return jsonify({'success': True, 'message': 'API key hợp lệ'})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000, debug=True)

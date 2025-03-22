@@ -18,38 +18,45 @@ class ImageProcessor:
         """
         Ghép các phần ảnh đã cắt thành một ảnh hoàn chỉnh theo chiều ngang
         """
-        if len(self.image_files) != images_per_group:
-            raise Exception(f"Số lượng ảnh ({len(self.image_files)}) không khớp với số phần cần ghép ({images_per_group})")
-
         try:
             # Sắp xếp ảnh theo số thứ tự
             self.image_files.sort(key=lambda x: int(re.search(r'\d+', x).group() if re.search(r'\d+', x) else 0))
+            
+            # Tính số nhóm cần ghép
+            total_images = len(self.image_files)
+            num_groups = (total_images + images_per_group - 1) // images_per_group
             
             # Mở ảnh đầu tiên để lấy kích thước
             with Image.open(os.path.join(self.folder_path, self.image_files[0])) as first_img:
                 part_width = first_img.width
                 part_height = first_img.height
 
-            # Tạo ảnh mới với chiều cao bằng tổng các phần
-            total_height = part_height * images_per_group
-            result = Image.new('RGB', (part_width, total_height))
+            # Ghép từng nhóm ảnh
+            for group_idx in range(num_groups):
+                start_idx = group_idx * images_per_group
+                end_idx = min(start_idx + images_per_group, total_images)
+                group_images = self.image_files[start_idx:end_idx]
+                
+                # Tạo ảnh mới với chiều cao bằng tổng các phần trong nhóm
+                total_height = part_height * len(group_images)
+                result = Image.new('RGB', (part_width, total_height))
 
-            # Ghép các phần ảnh theo chiều dọc
-            for idx, img_file in enumerate(self.image_files):
-                with Image.open(os.path.join(self.folder_path, img_file)) as img:
-                    if img.mode == 'RGBA':
-                        img = img.convert('RGB')
-                    result.paste(img, (0, idx * part_height))
+                # Ghép các phần ảnh theo chiều dọc
+                for idx, img_file in enumerate(group_images):
+                    with Image.open(os.path.join(self.folder_path, img_file)) as img:
+                        if img.mode == 'RGBA':
+                            img = img.convert('RGB')
+                        result.paste(img, (0, idx * part_height))
 
-            # Lưu ảnh ghép với tên là tên thư mục
-            output_path = os.path.join(self.folder_path, f"{self.folder_name}.jpg")
-            result.save(output_path, quality=95)
+                # Lưu ảnh ghép với tên là tên thư mục + số nhóm
+                output_path = os.path.join(self.folder_path, f"{self.folder_name}_group_{group_idx + 1}.jpg")
+                result.save(output_path, quality=95)
 
             # Xóa các ảnh gốc
             for img_file in self.image_files:
                 os.remove(os.path.join(self.folder_path, img_file))
 
-            print(f"Đã ghép thành công thành ảnh: {self.folder_name}.jpg")
+            print(f"Đã ghép thành công thành {num_groups} ảnh")
 
         except Exception as e:
             raise Exception(f"Lỗi khi ghép ảnh: {str(e)}")

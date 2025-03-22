@@ -1,0 +1,375 @@
+{% extends "base.html" %}
+
+{% block title %}Tải ảnh từ web - Image Processing Tools{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h2 class="mb-4">Tải ảnh từ web</h2>
+    
+    <!-- Tab Navigation -->
+    <ul class="nav nav-tabs mb-4" id="downloadTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="url-tab" data-bs-toggle="tab" data-bs-target="#url" type="button" role="tab">
+                <i class="fas fa-link me-2"></i>Tải từ URL
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="html-tab" data-bs-toggle="tab" data-bs-target="#html" type="button" role="tab">
+                <i class="fas fa-code me-2"></i>Tải từ mã HTML
+            </button>
+        </li>
+    </ul>
+    
+    <!-- Tab Content -->
+    <div class="tab-content" id="downloadTabContent">
+        <!-- URL Tab -->
+        <div class="tab-pane fade show active" id="url" role="tabpanel">
+            <div class="card">
+                <div class="card-body">
+                    <form id="urlForm">
+                        <div class="mb-3">
+                            <label for="url" class="form-label">URL trang web</label>
+                            <input type="url" class="form-control" id="url" name="url" placeholder="Nhập URL trang web">
+                            <div class="form-text">Ví dụ: https://example.com</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="bypassCloudflare" name="bypass_cloudflare">
+                                <label class="form-check-label" for="bypassCloudflare">
+                                    Bypass Cloudflare (nếu trang web có bảo vệ)
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-search me-2"></i>Tìm ảnh
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <!-- HTML Tab -->
+        <div class="tab-pane fade" id="html" role="tabpanel">
+            <div class="card">
+                <div class="card-body">
+                    <form id="htmlForm">
+                        <div class="mb-3">
+                            <label for="html_code" class="form-label">Mã HTML</label>
+                            <textarea class="form-control" id="html_code" name="html_code" rows="10" placeholder="Dán mã HTML vào đây"></textarea>
+                            <div class="form-text">Dán mã HTML của trang web chứa ảnh cần tải</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Tùy chọn tìm kiếm</label>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="searchImg" name="search_img" checked>
+                                        <label class="form-check-label" for="searchImg">
+                                            Tìm thẻ &lt;img&gt;
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="searchSource" name="search_source" checked>
+                                        <label class="form-check-label" for="searchSource">
+                                            Tìm thẻ &lt;source&gt;
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-search me-2"></i>Tìm ảnh
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Image Preview Section -->
+    <div id="imagePreview" class="mt-4" style="display: none;">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="card-title mb-0">Ảnh tìm thấy</h6>
+                    <div class="d-flex gap-2">
+                        <button id="selectAll" class="btn btn-secondary btn-sm">
+                            <i class="fas fa-check-double me-2"></i>Chọn tất cả
+                        </button>
+                        <button id="downloadSelected" class="btn btn-success btn-sm" disabled>
+                            <i class="fas fa-download me-2"></i>Tải ảnh đã chọn
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="row" id="imageGrid">
+                    <!-- Ảnh sẽ được thêm vào đây -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Result Section -->
+    <div id="resultArea" class="mt-4" style="display: none;">
+        <div class="card">
+            <div class="card-body">
+                <h6 class="card-title">Kết quả tải xuống</h6>
+                <p id="message" class="alert"></p>
+                <div id="downloadButtons">
+                    <!-- Nút tải xuống sẽ được thêm vào đây -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Highlight active sidebar item
+    document.querySelector('.sidebar-link[href="/dowloaf"]').classList.add('active');
+    
+    // Xử lý form URL
+    document.getElementById('urlForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        showLoading();
+        
+        const formData = new FormData(this);
+        const submitBtn = this.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        
+        try {
+            const response = await fetch('/execute/dowloaf', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (result.error) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Lỗi!',
+                    text: result.error
+                });
+            } else if (result.chapters) {
+                showChapters(result.chapters);
+            } else if (result.images) {
+                showImages(result.images);
+            }
+        } catch (error) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Lỗi!',
+                text: 'Có lỗi xảy ra khi tìm ảnh'
+            });
+        } finally {
+            hideLoading();
+            submitBtn.disabled = false;
+        }
+    });
+    
+    // Xử lý form HTML
+    document.getElementById('htmlForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        showLoading();
+        
+        const formData = new FormData(this);
+        const submitBtn = this.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        
+        try {
+            const response = await fetch('/execute/dowloaf', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (result.error) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Lỗi!',
+                    text: result.error
+                });
+            } else if (result.images) {
+                showImages(result.images);
+            }
+        } catch (error) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Lỗi!',
+                text: 'Có lỗi xảy ra khi tìm ảnh'
+            });
+        } finally {
+            hideLoading();
+            submitBtn.disabled = false;
+        }
+    });
+    
+    // Hiển thị danh sách chapter
+    function showChapters(chapters) {
+        const imagePreview = document.getElementById('imagePreview');
+        const imageGrid = document.getElementById('imageGrid');
+        
+        imageGrid.innerHTML = '';
+        
+        const chapterList = document.createElement('div');
+        chapterList.className = 'list-group';
+        
+        chapters.forEach(chapter => {
+            const link = document.createElement('a');
+            link.href = chapter.url;
+            link.className = 'list-group-item list-group-item-action';
+            link.innerHTML = `<i class="fas fa-book me-2"></i>${chapter.title}`;
+            link.target = '_blank';
+            chapterList.appendChild(link);
+        });
+        
+        imageGrid.appendChild(chapterList);
+        imagePreview.style.display = 'block';
+    }
+    
+    // Hiển thị lưới ảnh
+    function showImages(images) {
+        const imagePreview = document.getElementById('imagePreview');
+        const imageGrid = document.getElementById('imageGrid');
+        
+        imageGrid.innerHTML = '';
+        
+        images.forEach((image, index) => {
+            const col = document.createElement('div');
+            col.className = 'col-md-3 mb-3';
+            
+            const card = document.createElement('div');
+            card.className = 'card h-100';
+            
+            const img = document.createElement('img');
+            img.src = image.preview;
+            img.className = 'card-img-top';
+            img.alt = image.alt;
+            img.style.maxHeight = '200px';
+            img.style.objectFit = 'cover';
+            
+            const cardBody = document.createElement('div');
+            cardBody.className = 'card-body';
+            
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'form-check-input';
+            checkbox.dataset.url = image.url;
+            checkbox.addEventListener('change', () => {
+                const checkedBoxes = document.querySelectorAll('#imageGrid input[type="checkbox"]:checked');
+                document.getElementById('downloadSelected').disabled = checkedBoxes.length === 0;
+            });
+            
+            cardBody.appendChild(checkbox);
+            card.appendChild(img);
+            card.appendChild(cardBody);
+            col.appendChild(card);
+            imageGrid.appendChild(col);
+        });
+        
+        imagePreview.style.display = 'block';
+        document.getElementById('downloadSelected').disabled = true;
+    }
+    
+    // Xử lý chọn tất cả ảnh
+    document.getElementById('selectAll').addEventListener('click', function() {
+        const checkboxes = document.querySelectorAll('#imageGrid input[type="checkbox"]');
+        const isAllChecked = Array.from(checkboxes).every(cb => cb.checked);
+        
+        checkboxes.forEach(cb => {
+            cb.checked = !isAllChecked;
+        });
+        
+        document.getElementById('downloadSelected').disabled = isAllChecked;
+    });
+    
+    // Xử lý tải ảnh đã chọn
+    document.getElementById('downloadSelected').addEventListener('click', async function() {
+        const checkboxes = document.querySelectorAll('#imageGrid input[type="checkbox"]:checked');
+        const imageUrls = Array.from(checkboxes).map(cb => cb.dataset.url);
+        
+        if (imageUrls.length === 0) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Chú ý!',
+                text: 'Vui lòng chọn ít nhất một ảnh'
+            });
+            return;
+        }
+        
+        showLoading();
+        
+        try {
+            const response = await fetch('/execute/download_images', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ image_urls: imageUrls })
+            });
+            
+            const result = await response.json();
+            
+            if (result.error) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Lỗi!',
+                    text: result.error
+                });
+            } else {
+                showDownloadResult(result);
+            }
+        } catch (error) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Lỗi!',
+                text: 'Có lỗi xảy ra khi tải ảnh'
+            });
+        } finally {
+            hideLoading();
+        }
+    });
+    
+    // Hiển thị kết quả tải xuống
+    function showDownloadResult(result) {
+        const resultArea = document.getElementById('resultArea');
+        const message = document.getElementById('message');
+        const downloadButtons = document.getElementById('downloadButtons');
+        
+        message.className = 'alert alert-success';
+        message.innerHTML = `<i class="fas fa-check-circle me-2"></i>${result.message}`;
+        
+        downloadButtons.innerHTML = '';
+        result.output_files.forEach(file => {
+            const btn = document.createElement('a');
+            btn.href = `/download/${file}`;
+            btn.className = 'btn btn-success me-2';
+            btn.innerHTML = `<i class="fas fa-download me-2"></i>Tải xuống kết quả`;
+            downloadButtons.appendChild(btn);
+        });
+        
+        resultArea.style.display = 'block';
+    }
+});
+
+// Hiển thị loading
+function showLoading() {
+    document.querySelector('.loading').style.display = 'flex';
+}
+
+// Ẩn loading
+function hideLoading() {
+    document.querySelector('.loading').style.display = 'none';
+}
+</script>
+{% endblock %} 

@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block title %}Xóa bóng thoại - Image Processing Tools{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1 class="page-title">Xóa bóng thoại trong ảnh</h1>
+    
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card function-card">
+                <div class="card-body">
+                    <form id="speechBubbleForm" enctype="multipart/form-data">
+                        <!-- API Key Input -->
+                        <div class="mb-4">
+                            <label class="form-label">API Key Gemini</label>
+                            <div class="input-group">
+                                <input type="password" class="form-control" id="apiKey" name="api_key" required>
+                                <button type="button" class="btn btn-outline-secondary" id="toggleApiKey">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-primary" id="saveApiKey">
+                                    <i class="fas fa-save"></i> Lưu
+                                </button>
+                            </div>
+                            <div class="form-text">Nhập API key của bạn để sử dụng tính năng xóa bóng thoại</div>
+                        </div>
+
+                        <!-- File Upload -->
+                        <div class="mb-4">
+                            <label class="form-label">Chọn ảnh cần xử lý</label>
+                            <input type="file" class="form-control" id="files" name="files" multiple accept="image/*" required>
+                            <div class="form-text">Bạn có thể chọn nhiều ảnh cùng lúc</div>
+                        </div>
+
+                        <!-- Preview Section -->
+                        <div id="previewSection" class="mb-4 d-none">
+                            <h5>Xem trước ảnh đã chọn</h5>
+                            <div class="row g-3" id="imagePreview"></div>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <div class="text-center">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-magic me-2"></i>Xóa bóng thoại
+                            </button>
+                        </div>
+                    </form>
+
+                    <!-- Result Section -->
+                    <div id="resultSection" class="mt-4 d-none">
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle me-2"></i>
+                            <span id="resultMessage"></span>
+                        </div>
+                        <div class="text-center">
+                            <a href="#" id="downloadLink" class="btn btn-success">
+                                <i class="fas fa-download me-2"></i>Tải xuống kết quả
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Load saved API key
+    const savedApiKey = localStorage.getItem('speechBubbleApiKey');
+    if (savedApiKey) {
+        document.getElementById('apiKey').value = savedApiKey;
+    }
+
+    // Toggle API key visibility
+    document.getElementById('toggleApiKey').addEventListener('click', function() {
+        const apiKeyInput = document.getElementById('apiKey');
+        const icon = this.querySelector('i');
+        if (apiKeyInput.type === 'password') {
+            apiKeyInput.type = 'text';
+            icon.className = 'fas fa-eye-slash';
+        } else {
+            apiKeyInput.type = 'password';
+            icon.className = 'fas fa-eye';
+        }
+    });
+
+    // Save API key
+    document.getElementById('saveApiKey').addEventListener('click', function() {
+        const apiKey = document.getElementById('apiKey').value;
+        localStorage.setItem('speechBubbleApiKey', apiKey);
+        Swal.fire({
+            icon: 'success',
+            title: 'Đã lưu API key',
+            text: 'API key của bạn đã được lưu thành công!',
+            timer: 2000,
+            showConfirmButton: false
+        });
+    });
+
+    // Preview images
+    document.getElementById('files').addEventListener('change', function(e) {
+        const previewSection = document.getElementById('previewSection');
+        const imagePreview = document.getElementById('imagePreview');
+        imagePreview.innerHTML = '';
+        
+        if (this.files.length > 0) {
+            previewSection.classList.remove('d-none');
+            
+            for (let file of this.files) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const col = document.createElement('div');
+                    col.className = 'col-md-4';
+                    col.innerHTML = `
+                        <div class="card">
+                            <img src="${e.target.result}" class="card-img-top" alt="Preview">
+                            <div class="card-body">
+                                <p class="card-text small">${file.name}</p>
+                            </div>
+                        </div>
+                    `;
+                    imagePreview.appendChild(col);
+                }
+                reader.readAsDataURL(file);
+            }
+        } else {
+            previewSection.classList.add('d-none');
+        }
+    });
+
+    // Handle form submission
+    document.getElementById('speechBubbleForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const submitBtn = this.querySelector('button[type="submit"]');
+        const originalBtnText = submitBtn.innerHTML;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Đang xử lý...';
+        
+        try {
+            const formData = new FormData(this);
+            const response = await fetch('/remove_speech_bubbles', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                document.getElementById('resultMessage').textContent = result.message;
+                document.getElementById('downloadLink').href = result.download_url;
+                document.getElementById('resultSection').classList.remove('d-none');
+            } else {
+                throw new Error(result.error || 'Có lỗi xảy ra');
+            }
+        } catch (error) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Lỗi',
+                text: error.message
+            });
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalBtnText;
+        }
+    });
+});
+</script>
+{% endblock %} 

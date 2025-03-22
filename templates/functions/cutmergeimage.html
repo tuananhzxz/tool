@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}Cắt ghép ảnh - Image Processing Tools{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h2 class="mb-4">Cắt ghép ảnh</h2>
+    
+    <div class="card">
+        <div class="card-body">
+            <form id="uploadForm" enctype="multipart/form-data">
+                <div class="mb-3">
+                    <label for="action" class="form-label">Chọn hành động:</label>
+                    <select class="form-select" id="action" name="action">
+                        <option value="split">Cắt ảnh</option>
+                        <option value="merge">Ghép ảnh</option>
+                    </select>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="parts" class="form-label">Số phần:</label>
+                    <input type="number" class="form-control" id="parts" name="parts" value="2" min="2">
+                </div>
+                
+                <div class="mb-3">
+                    <label for="width" class="form-label">Chiều rộng (để trống để giữ nguyên):</label>
+                    <input type="number" class="form-control" id="width" name="width">
+                </div>
+                
+                <div class="mb-3">
+                    <label for="height" class="form-label">Chiều cao (để trống để giữ nguyên):</label>
+                    <input type="number" class="form-control" id="height" name="height">
+                </div>
+                
+                <div class="mb-3">
+                    <label for="files" class="form-label">Chọn ảnh:</label>
+                    <input type="file" class="form-control" id="files" name="files" multiple accept="image/*" required>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-cut me-2"></i>Xử lý
+                </button>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Result Section -->
+    <div id="resultArea" class="mt-4" style="display: none;">
+        <div class="card">
+            <div class="card-body">
+                <h6 class="card-title">Kết quả xử lý</h6>
+                <p id="message" class="alert"></p>
+                <div id="downloadButtons">
+                    <!-- Nút tải xuống sẽ được thêm vào đây -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Highlight active sidebar item
+    document.querySelector('.sidebar-link[href="/cutmergeimage"]').classList.add('active');
+    
+    // Handle form submission
+    document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const submitBtn = this.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Đang xử lý...';
+        
+        const formData = new FormData(this);
+        
+        try {
+            const response = await fetch('/execute/cutmergeimage', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            const resultArea = document.getElementById('resultArea');
+            const messageArea = document.getElementById('message');
+            const downloadButtons = document.getElementById('downloadButtons');
+            
+            if (result.error) {
+                messageArea.className = 'alert alert-danger';
+                messageArea.textContent = result.error;
+            } else {
+                messageArea.className = 'alert alert-success';
+                messageArea.textContent = result.message;
+                
+                // Xóa các nút tải xuống cũ
+                downloadButtons.innerHTML = '';
+                
+                // Thêm các nút tải xuống mới
+                result.output_files.forEach(file => {
+                    const btn = document.createElement('a');
+                    btn.href = `/download/${file}`;
+                    btn.className = 'btn btn-success me-2';
+                    btn.innerHTML = '<i class="fas fa-download me-2"></i>Tải xuống';
+                    downloadButtons.appendChild(btn);
+                });
+            }
+            
+            resultArea.style.display = 'block';
+            
+        } catch (error) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Lỗi!',
+                text: 'Có lỗi xảy ra khi xử lý yêu cầu'
+            });
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-cut me-2"></i>Xử lý';
+        }
+    });
+    
+    // Handle action change
+    document.getElementById('action').addEventListener('change', function() {
+        const partsInput = document.getElementById('parts');
+        const partsLabel = partsInput.previousElementSibling;
+        
+        if (this.value === 'split') {
+            partsLabel.textContent = 'Số phần cắt:';
+        } else {
+            partsLabel.textContent = 'Số ảnh mỗi nhóm:';
+        }
+    });
+});
+</script>
+{% endblock %} 

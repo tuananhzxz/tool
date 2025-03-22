@@ -1,0 +1,371 @@
+{% extends "base.html" %}
+
+{% block title %}Nhận dạng văn bản - Image Processing Tools{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h2 class="mb-4">Nhận dạng văn bản</h2>
+    
+    <div class="card">
+        <div class="card-body">
+            <div class="alert alert-info mb-4">
+                <i class="fas fa-info-circle me-2"></i>
+                <strong>Lưu ý:</strong> Để sử dụng tính năng nhận dạng văn bản, bạn cần cung cấp API key của Google Gemini Vision API.
+                API key này chỉ được sử dụng để nhận dạng văn bản trong ảnh, không sử dụng cho việc tạo nội dung.
+                <a href="https://makersuite.google.com/app/apikey" target="_blank" class="alert-link">Nhận API key tại đây</a>
+            </div>
+            
+            <form id="ocrForm" enctype="multipart/form-data">
+                <div class="mb-3">
+                    <label for="files" class="form-label">Chọn ảnh cần nhận dạng</label>
+                    <input type="file" class="form-control" id="files" name="files" multiple accept="image/*" required>
+                    <div class="form-text">Hệ thống sẽ tự động phát hiện ngôn ngữ trong ảnh và xuất file Word theo ngôn ngữ được phát hiện.</div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="apiKey" class="form-label">API Key Gemini Vision</label>
+                    <div class="input-group">
+                        <input type="password" class="form-control" id="apiKey" name="api_key" required>
+                        <button type="button" class="btn btn-outline-secondary" id="testApiKey">
+                            <i class="fas fa-vial"></i>
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" id="saveApiKey">
+                            <i class="fas fa-save"></i>
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" id="toggleApiKey">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </div>
+                    <div class="form-text">API key này chỉ được sử dụng cho việc nhận dạng văn bản trong ảnh</div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-font me-2"></i>Nhận dạng văn bản
+                </button>
+            </form>
+            
+            <!-- Selected Files Preview -->
+            <div id="selectedFiles" class="mt-4" style="display: none;">
+                <h6 class="mb-3">File đã chọn:</h6>
+                <div class="list-group" id="fileList">
+                    <!-- Danh sách file sẽ được thêm vào đây -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Result Section -->
+    <div id="resultSection" class="mt-4" style="display: none;">
+        <div class="card">
+            <div class="card-body">
+                <h6 class="card-title">Kết quả xử lý</h6>
+                <div id="wordFiles" class="mb-3">
+                    <!-- Danh sách file Word sẽ được thêm vào đây -->
+                </div>
+                <div class="d-flex gap-2">
+                    <button id="downloadAll" class="btn btn-success">
+                        <i class="fas fa-download me-2"></i>Tải tất cả
+                    </button>
+                    <button id="mergeFiles" class="btn btn-info">
+                        <i class="fas fa-file-word me-2"></i>Gộp file
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Highlight active sidebar item
+    document.querySelector('.sidebar-link[href="/ocr"]').classList.add('active');
+    
+    const fileInput = document.getElementById('files');
+    const selectedFiles = document.getElementById('selectedFiles');
+    const fileList = document.getElementById('fileList');
+    const apiKeyInput = document.getElementById('apiKey');
+    
+    // Load API key đã lưu
+    const savedApiKey = localStorage.getItem('ocrApiKey');
+    if (savedApiKey) {
+        apiKeyInput.value = savedApiKey;
+    }
+    
+    // Xử lý kiểm tra API key
+    document.getElementById('testApiKey').addEventListener('click', async function() {
+        const apiKey = apiKeyInput.value;
+        if (!apiKey) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Lỗi!',
+                text: 'Vui lòng nhập API key trước khi kiểm tra'
+            });
+            return;
+        }
+
+        showLoading();
+        
+        try {
+            const response = await fetch('/test_api_key', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    api_key: apiKey
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.error) {
+                throw new Error(result.error);
+            }
+            
+            Swal.fire({
+                icon: 'success',
+                title: 'Thành công!',
+                text: 'API key hợp lệ và có thể sử dụng',
+                toast: true,
+                position: 'top-end',
+                showConfirmButton: false,
+                timer: 3000
+            });
+        } catch (error) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Lỗi!',
+                text: error.message || 'Không thể kết nối với API'
+            });
+        } finally {
+            hideLoading();
+        }
+    });
+    
+    // Xử lý lưu API key
+    document.getElementById('saveApiKey').addEventListener('click', function() {
+        const apiKey = apiKeyInput.value;
+        if (apiKey) {
+            localStorage.setItem('ocrApiKey', apiKey);
+            Swal.fire({
+                icon: 'success',
+                title: 'Thành công!',
+                text: 'Đã lưu API key thành công',
+                toast: true,
+                position: 'top-end',
+                showConfirmButton: false,
+                timer: 3000
+            });
+        }
+    });
+    
+    // Xử lý hiển thị/ẩn API key
+    document.getElementById('toggleApiKey').addEventListener('click', function() {
+        const icon = this.querySelector('i');
+        if (apiKeyInput.type === 'password') {
+            apiKeyInput.type = 'text';
+            icon.className = 'fas fa-eye-slash';
+        } else {
+            apiKeyInput.type = 'password';
+            icon.className = 'fas fa-eye';
+        }
+    });
+    
+    // Hiển thị danh sách file đã chọn
+    fileInput.addEventListener('change', function() {
+        fileList.innerHTML = '';
+        
+        if (this.files.length > 0) {
+            Array.from(this.files).forEach(file => {
+                const item = document.createElement('div');
+                item.className = 'list-group-item d-flex justify-content-between align-items-center';
+                item.innerHTML = `
+                    <div>
+                        <i class="fas fa-image text-primary me-2"></i>
+                        <span>${file.name}</span>
+                    </div>
+                    <span class="badge bg-primary rounded-pill">${(file.size / 1024).toFixed(2)} KB</span>
+                `;
+                fileList.appendChild(item);
+            });
+            
+            selectedFiles.style.display = 'block';
+        } else {
+            selectedFiles.style.display = 'none';
+        }
+    });
+    
+    // Xử lý form submit
+    document.getElementById('ocrForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        showLoading();
+        
+        const formData = new FormData(this);
+        formData.append('mode', 'ocr');
+        
+        const submitBtn = this.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        
+        try {
+            const response = await fetch('/execute/ocr', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (result.error) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Lỗi!',
+                    text: result.error
+                });
+            } else {
+                showResult(result);
+            }
+        } catch (error) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Lỗi!',
+                text: 'Có lỗi xảy ra khi xử lý OCR'
+            });
+        } finally {
+            hideLoading();
+            submitBtn.disabled = false;
+        }
+    });
+    
+    // Hiển thị kết quả
+    function showResult(result) {
+        const resultSection = document.getElementById('resultSection');
+        const wordFiles = document.getElementById('wordFiles');
+        
+        wordFiles.innerHTML = '';
+        
+        if (result.word_files) {
+            Object.entries(result.word_files).forEach(([lang, files]) => {
+                const langDiv = document.createElement('div');
+                langDiv.className = 'mb-3';
+                
+                const langTitle = document.createElement('h6');
+                langTitle.className = 'text-muted mb-2';
+                langTitle.textContent = `Ngôn ngữ phát hiện: ${getLangName(lang)}`;
+                
+                const fileList = document.createElement('div');
+                fileList.className = 'list-group';
+                
+                files.forEach(file => {
+                    const item = document.createElement('div');
+                    item.className = 'list-group-item d-flex justify-content-between align-items-center';
+                    item.innerHTML = `
+                        <div>
+                            <i class="fas fa-file-word me-2"></i>${file}
+                        </div>
+                        <a href="/download/${file}" class="btn btn-sm btn-outline-primary" target="_blank">
+                            <i class="fas fa-download"></i>
+                        </a>
+                    `;
+                    fileList.appendChild(item);
+                });
+                
+                langDiv.appendChild(langTitle);
+                langDiv.appendChild(fileList);
+                wordFiles.appendChild(langDiv);
+            });
+        }
+        
+        resultSection.style.display = 'block';
+        
+        // Cuộn đến kết quả
+        resultSection.scrollIntoView({ behavior: 'smooth' });
+    }
+    
+    // Xử lý nút tải tất cả
+    document.getElementById('downloadAll').addEventListener('click', async function() {
+        const links = document.querySelectorAll('#wordFiles a');
+        for (const link of links) {
+            try {
+                const response = await fetch(link.href);
+                if (!response.ok) {
+                    throw new Error('Lỗi khi tải file');
+                }
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = link.href.split('/').pop();
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            } catch (error) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Lỗi!',
+                    text: `Không thể tải file ${link.href.split('/').pop()}: ${error.message}`
+                });
+            }
+        }
+    });
+    
+    // Xử lý nút gộp file
+    document.getElementById('mergeFiles').addEventListener('click', async function() {
+        showLoading();
+        
+        try {
+            const files = Array.from(document.querySelectorAll('#wordFiles a')).map(a => a.href.split('/').pop());
+            const formData = new FormData();
+            files.forEach(file => {
+                formData.append('files', file);
+            });
+            
+            const response = await fetch('/execute/merge_ocr', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (result.error) {
+                throw new Error(result.error);
+            }
+            
+            if (result.output_files) {
+                window.location.href = `/download/${result.output_files[0]}`;
+            }
+        } catch (error) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Lỗi!',
+                text: error.message || 'Có lỗi xảy ra khi gộp file'
+            });
+        } finally {
+            hideLoading();
+        }
+    });
+});
+
+// Chuyển đổi mã ngôn ngữ thành tên
+function getLangName(code) {
+    const langs = {
+        'vie': 'Tiếng Việt',
+        'eng': 'Tiếng Anh',
+        'jpn': 'Tiếng Nhật',
+        'kor': 'Tiếng Hàn'
+    };
+    return langs[code] || code;
+}
+
+// Hiển thị loading
+function showLoading() {
+    document.querySelector('.loading').style.display = 'flex';
+}
+
+// Ẩn loading
+function hideLoading() {
+    document.querySelector('.loading').style.display = 'none';
+}
+</script>
+{% endblock %} 

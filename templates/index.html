@@ -4,14 +4,47 @@
 
 {% block content %}
 <div class="container">
-    <h1 class="text-center mb-4">Công cụ xử lý ảnh</h1>
-    <div class="row">
+    <h1 class="page-title">Công cụ xử lý ảnh</h1>
+    <div class="row g-4">
         {% for key, value in functions.items() %}
-        <div class="col-md-4 mb-4">
-            <div class="card function-card h-100">
-                <div class="card-body">
+        <div class="col-md-4">
+            <div class="function-card h-100">
+                <div class="card-body text-center">
+                    <div class="icon-wrapper mb-3">
+                        {% if key == 'changeImage' %}
+                        <i class="fas fa-exchange-alt fa-3x text-primary"></i>
+                        {% elif key == 'cutmergeimage' %}
+                        <i class="fas fa-cut fa-3x text-primary"></i>
+                        {% elif key == 'dowloaf' %}
+                        <i class="fas fa-download fa-3x text-primary"></i>
+                        {% elif key == 'mergeWord' %}
+                        <i class="fas fa-file-word fa-3x text-primary"></i>
+                        {% elif key == 'renameImage' %}
+                        <i class="fas fa-file-signature fa-3x text-primary"></i>
+                        {% elif key == 'ocr' %}
+                        <i class="fas fa-font fa-3x text-primary"></i>
+                        {% endif %}
+                    </div>
                     <h5 class="card-title">{{ value }}</h5>
-                    <a href="/function/{{ key }}" class="btn btn-primary">Sử dụng</a>
+                    <p class="card-text text-muted mb-3">
+                        {% if key == 'changeImage' %}
+                        Chuyển đổi định dạng ảnh giữa các định dạng phổ biến
+                        {% elif key == 'cutmergeimage' %}
+                        Cắt và ghép ảnh theo ý muốn
+                        {% elif key == 'dowloaf' %}
+                        Tải ảnh từ các trang web hoặc mã HTML
+                        {% elif key == 'mergeWord' %}
+                        Gộp nhiều file Word thành một
+                        {% elif key == 'renameImage' %}
+                        Đổi tên file ảnh theo quy tắc
+                        {% elif key == 'ocr' %}
+                        Nhận dạng và dịch văn bản từ ảnh
+                        {% endif %}
+                    </p>
+                    <a href="/function/{{ key }}" class="btn btn-primary">
+                        <i class="fas fa-arrow-right me-2"></i>
+                        Sử dụng
+                    </a>
                 </div>
             </div>
         </div>

@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block title %}Hợp nhất file Word - Image Processing Tools{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1 class="page-title">Hợp nhất file Word</h1>
+    
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card function-card">
+                <div class="card-body">
+                    <form id="mergeWordForm" enctype="multipart/form-data">
+                        <!-- File Upload -->
+                        <div class="mb-4">
+                            <label class="form-label">Chọn các file Word cần hợp nhất</label>
+                            <input type="file" class="form-control" id="files" name="files" multiple accept=".docx" required>
+                            <div class="form-text">Bạn có thể chọn nhiều file Word (.docx) cùng lúc</div>
+                        </div>
+
+                        <!-- File List -->
+                        <div id="fileList" class="mb-4 d-none">
+                            <h5>Danh sách file đã chọn</h5>
+                            <div class="list-group" id="selectedFiles"></div>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <div class="text-center">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-file-word me-2"></i>Hợp nhất file
+                            </button>
+                        </div>
+                    </form>
+
+                    <!-- Result Section -->
+                    <div id="resultSection" class="mt-4 d-none">
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle me-2"></i>
+                            <span id="resultMessage"></span>
+                        </div>
+                        <div class="text-center">
+                            <a href="#" id="downloadLink" class="btn btn-success">
+                                <i class="fas fa-download me-2"></i>Tải xuống file đã hợp nhất
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Handle file selection
+    document.getElementById('files').addEventListener('change', function(e) {
+        const fileList = document.getElementById('fileList');
+        const selectedFiles = document.getElementById('selectedFiles');
+        selectedFiles.innerHTML = '';
+        
+        if (this.files.length > 0) {
+            fileList.classList.remove('d-none');
+            
+            for (let file of this.files) {
+                const item = document.createElement('div');
+                item.className = 'list-group-item d-flex justify-content-between align-items-center';
+                item.innerHTML = `
+                    <div>
+                        <i class="fas fa-file-word text-primary me-2"></i>
+                        ${file.name}
+                        <span class="badge bg-secondary rounded-pill ms-2">${formatFileSize(file.size)}</span>
+                    </div>
+                `;
+                selectedFiles.appendChild(item);
+            }
+        } else {
+            fileList.classList.add('d-none');
+        }
+    });
+
+    // Format file size
+    function formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    // Handle form submission
+    document.getElementById('mergeWordForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const submitBtn = this.querySelector('button[type="submit"]');
+        const originalBtnText = submitBtn.innerHTML;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Đang xử lý...';
+        
+        try {
+            const formData = new FormData(this);
+            const response = await fetch('/execute/mergeWord', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (result.output_files) {
+                document.getElementById('resultMessage').textContent = result.message;
+                document.getElementById('downloadLink').href = `/download/${result.output_files[0]}`;
+                document.getElementById('resultSection').classList.remove('d-none');
+            } else {
+                throw new Error(result.error || 'Có lỗi xảy ra');
+            }
+        } catch (error) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Lỗi',
+                text: error.message
+            });
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalBtnText;
+        }
+    });
+});
+</script>
+{% endblock %} 

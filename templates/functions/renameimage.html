@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+
+{% block title %}Đổi tên ảnh - Image Processing Tools{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h2 class="mb-4">Đổi tên ảnh</h2>
+    
+    <div class="card">
+        <div class="card-body">
+            <div class="alert alert-info mb-4">
+                <i class="fas fa-info-circle me-2"></i>
+                <strong>Hướng dẫn:</strong>
+                <ul class="mb-0">
+                    <li>Chọn các file ảnh cần đổi tên</li>
+                    <li>Nhập mẫu tên mới (ví dụ: "Chapter_{n}" sẽ tạo ra "Chapter_1", "Chapter_2",...)</li>
+                    <li>Có thể thêm số 0 phía trước (001, 002,...) bằng cách chọn số chữ số</li>
+                </ul>
+            </div>
+            
+            <form id="renameForm" enctype="multipart/form-data">
+                <div class="mb-3">
+                    <label for="files" class="form-label">Chọn các file ảnh</label>
+                    <input type="file" class="form-control" id="files" name="files" multiple accept="image/*" required>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="pattern" class="form-label">Mẫu tên mới</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="pattern" name="pattern" placeholder="Nhập mẫu tên (ví dụ: Chapter_{n})" required>
+                        <span class="input-group-text">.jpg</span>
+                    </div>
+                    <div class="form-text">Sử dụng {n} để chèn số thứ tự</div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="digits" class="form-label">Số chữ số</label>
+                    <select class="form-select" id="digits" name="digits">
+                        <option value="1">1 (1, 2, 3,...)</option>
+                        <option value="2">2 (01, 02, 03,...)</option>
+                        <option value="3" selected>3 (001, 002, 003,...)</option>
+                        <option value="4">4 (0001, 0002, 0003,...)</option>
+                    </select>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="startNumber" class="form-label">Bắt đầu từ số</label>
+                    <input type="number" class="form-control" id="startNumber" name="start_number" value="1" min="0" required>
+                </div>
+                
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="keepOriginal" name="keep_original">
+                        <label class="form-check-label" for="keepOriginal">
+                            Giữ lại file gốc
+                        </label>
+                    </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-file-signature me-2"></i>Đổi tên
+                </button>
+            </form>
+            
+            <!-- Selected Files Preview -->
+            <div id="selectedFiles" class="mt-4" style="display: none;">
+                <h6 class="mb-3">File đã chọn:</h6>
+                <div class="list-group" id="fileList">
+                    <!-- Danh sách file sẽ được thêm vào đây -->
+                </div>
+            </div>
+            
+            <!-- Preview Section -->
+            <div id="previewArea" class="mt-4" style="display: none;">
+                <h6 class="mb-3">Xem trước tên mới:</h6>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Tên cũ</th>
+                                <th>Tên mới</th>
+                            </tr>
+                        </thead>
+                        <tbody id="previewList">
+                            <!-- Danh sách xem trước sẽ được thêm vào đây -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Result Section -->
+    <div id="resultArea" class="mt-4" style="display: none;">
+        <div class="card">
+            <div class="card-body">
+                <h6 class="card-title">Kết quả</h6>
+                <p id="message" class="alert"></p>
+                <div id="downloadButtons">
+                    <!-- Nút tải xuống sẽ được thêm vào đây -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Highlight active sidebar item
+    document.querySelector('.sidebar-link[href="/renameimage"]').classList.add('active');
+    
+    const fileInput = document.getElementById('files');
+    const selectedFiles = document.getElementById('selectedFiles');
+    const fileList = document.getElementById('fileList');
+    const pattern = document.getElementById('pattern');
+    const digits = document.getElementById('digits');
+    const startNumber = document.getElementById('startNumber');
+    const previewArea = document.getElementById('previewArea');
+    const previewList = document.getElementById('previewList');
+    
+    // Hiển thị danh sách file đã chọn và xem trước tên mới
+    function updatePreview() {
+        fileList.innerHTML = '';
+        previewList.innerHTML = '';
+        
+        if (fileInput.files.length > 0) {
+            Array.from(fileInput.files).forEach((file, index) => {
+                // Thêm vào danh sách file
+                const item = document.createElement('div');
+                item.className = 'list-group-item d-flex justify-content-between align-items-center';
+                item.innerHTML = `
+                    <div>
+                        <i class="fas fa-image text-primary me-2"></i>
+                        <span>${file.name}</span>
+                    </div>
+                    <span class="badge bg-primary rounded-pill">${(file.size / 1024).toFixed(2)} KB</span>
+                `;
+                fileList.appendChild(item);
+                
+                // Tạo tên mới cho xem trước
+                if (pattern.value) {
+                    const number = (parseInt(startNumber.value) + index).toString().padStart(parseInt(digits.value), '0');
+                    const newName = pattern.value.replace('{n}', number) + '.jpg';
+                    
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${file.name}</td>
+                        <td>${newName}</td>
+                    `;
+                    previewList.appendChild(row);
+                }
+            });
+            
+            selectedFiles.style.display = 'block';
+            previewArea.style.display = pattern.value ? 'block' : 'none';
+        } else {
+            selectedFiles.style.display = 'none';
+            previewArea.style.display = 'none';
+        }
+    }
+    
+    // Cập nhật xem trước khi thay đổi file
+    fileInput.addEventListener('change', updatePreview);
+    
+    // Cập nhật xem trước khi thay đổi mẫu tên
+    pattern.addEventListener('input', updatePreview);
+    
+    // Cập nhật xem trước khi thay đổi số chữ số
+    digits.addEventListener('change', updatePreview);
+    
+    // Cập nhật xem trước khi thay đổi số bắt đầu
+    startNumber.addEventListener('change', updatePreview);
+    
+    // Xử lý form submit
+    document.getElementById('renameForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        showLoading();
+        
+        const formData = new FormData(this);
+        const submitBtn = this.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        
+        try {
+            const response = await fetch('/execute/renameImage', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (result.error) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Lỗi!',
+                    text: result.error
+                });
+            } else {
+                showResult(result);
+            }
+        } catch (error) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Lỗi!',
+                text: 'Có lỗi xảy ra khi đổi tên file'
+            });
+        } finally {
+            hideLoading();
+            submitBtn.disabled = false;
+        }
+    });
+    
+    // Hiển thị kết quả
+    function showResult(result) {
+        const resultArea = document.getElementById('resultArea');
+        const message = document.getElementById('message');
+        const downloadButtons = document.getElementById('downloadButtons');
+        
+        message.className = 'alert alert-success';
+        message.innerHTML = `<i class="fas fa-check-circle me-2"></i>${result.message}`;
+        
+        downloadButtons.innerHTML = '';
+        if (result.output_files) {
+            const btn = document.createElement('a');
+            btn.href = `/download/${result.output_files}`;
+            btn.className = 'btn btn-success me-2';
+            btn.innerHTML = `<i class="fas fa-download me-2"></i>Tải xuống file nén`;
+            downloadButtons.appendChild(btn);
+        }
+        
+        resultArea.style.display = 'block';
+        
+        // Cuộn đến kết quả
+        resultArea.scrollIntoView({ behavior: 'smooth' });
+    }
+});
+
+// Hiển thị loading
+function showLoading() {
+    document.querySelector('.loading').style.display = 'flex';
+}
+
+// Ẩn loading
+function hideLoading() {
+    document.querySelector('.loading').style.display = 'none';
+}
+</script>
+{% endblock %} 

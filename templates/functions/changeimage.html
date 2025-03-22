@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}Chuyển đổi ảnh - Image Processing Tools{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h2 class="mb-4">Chuyển đổi ảnh</h2>
+    
+    <div class="card">
+        <div class="card-body">
+            <form id="uploadForm" enctype="multipart/form-data">
+                <div class="mb-3">
+                    <label for="target_format" class="form-label">Chọn định dạng đích:</label>
+                    <select class="form-select" id="target_format" name="target_format">
+                        <option value="webp">WebP</option>
+                        <option value="jpeg">JPEG</option>
+                        <option value="png">PNG</option>
+                    </select>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="files" class="form-label">Chọn ảnh cần chuyển đổi:</label>
+                    <input type="file" class="form-control" id="files" name="files" multiple accept="image/*" required>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-exchange-alt me-2"></i>Chuyển đổi
+                </button>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Result Section -->
+    <div id="resultArea" class="mt-4" style="display: none;">
+        <div class="card">
+            <div class="card-body">
+                <h6 class="card-title">Kết quả xử lý</h6>
+                <p id="message" class="alert"></p>
+                <div id="downloadButtons">
+                    <!-- Nút tải xuống sẽ được thêm vào đây -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Highlight active sidebar item
+    document.querySelector('.sidebar-link[href="/changeImage"]').classList.add('active');
+    
+    // Handle form submission
+    document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const submitBtn = this.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Đang xử lý...';
+        
+        const formData = new FormData(this);
+        
+        try {
+            const response = await fetch('/execute/changeImage', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            const resultArea = document.getElementById('resultArea');
+            const messageArea = document.getElementById('message');
+            const downloadButtons = document.getElementById('downloadButtons');
+            
+            if (result.error) {
+                messageArea.className = 'alert alert-danger';
+                messageArea.textContent = result.error;
+            } else {
+                messageArea.className = 'alert alert-success';
+                messageArea.textContent = result.message;
+                
+                // Xóa các nút tải xuống cũ
+                downloadButtons.innerHTML = '';
+                
+                // Thêm các nút tải xuống mới
+                result.output_files.forEach(file => {
+                    const btn = document.createElement('a');
+                    btn.href = `/download/${file}`;
+                    btn.className = 'btn btn-success me-2';
+                    btn.innerHTML = '<i class="fas fa-download me-2"></i>Tải xuống';
+                    downloadButtons.appendChild(btn);
+                });
+            }
+            
+            resultArea.style.display = 'block';
+            
+        } catch (error) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Lỗi!',
+                text: 'Có lỗi xảy ra khi xử lý yêu cầu'
+            });
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-exchange-alt me-2"></i>Chuyển đổi';
+        }
+    });
+});
+</script>
+{% endblock %} 
