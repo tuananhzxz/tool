@@ -401,9 +401,12 @@ def execute_ocr():
     try:
         files = request.files.getlist('files')
         api_key = request.form.get('api_key')
+        mode = request.form.get('mode', 'ocr')  # Thêm mode để phân biệt OCR và dịch
+        genres = request.form.getlist('genres[]')  # Lấy danh sách thể loại
+        styles = request.form.getlist('styles[]')  # Lấy danh sách phong cách
         
         if not files or not api_key:
-            return jsonify({'error': 'Vui lòng cung cấp ảnh và API key'})
+            return jsonify({'error': 'Vui lòng cung cấp file và API key'})
         
         # Khởi tạo client Gemini với API key
         client = genai.Client(api_key=api_key)
@@ -413,6 +416,15 @@ def execute_ocr():
         doc = Document()
         doc.add_heading('Cám ơn đã sử dụng tôi iu bạn có thể mua ủng hộ ly cafe để web phát triển hơn...', 0)
         
+        # Thêm thông tin về thể loại và phong cách
+        if genres or styles:
+            doc.add_paragraph('=== Thông tin truyện ===')
+            if genres:
+                doc.add_paragraph('Thể loại: ' + ', '.join(genres))
+            if styles:
+                doc.add_paragraph('Phong cách: ' + ', '.join(styles))
+            doc.add_paragraph('---')
+        
         extracted_texts = []
         
         # Xử lý từng file
@@ -420,44 +432,119 @@ def execute_ocr():
             if not file.filename:
                 continue
                 
-            # Đọc hình ảnh và chuyển đổi thành bytes
-            image_bytes = file.read()
+            # Kiểm tra định dạng file
+            file_ext = os.path.splitext(file.filename)[1].lower()
             
-            # Tạo prompt cho việc nhận dạng văn bản
-            prompt = """
-                Hãy nhận dạng và liệt kê tất cả các đoạn văn bản trong các bóng thoại của ảnh truyện tranh này.
-                Mỗi bóng thoại sẽ được đánh số thứ tự và nội dung của nó.
-                Chỉ trả về nội dung văn bản, không cần giải thích thêm.
-                Format:
-                ...
-                ...
-                ...
-              """
-            
-            # Gửi yêu cầu đến Gemini API
-            response = model.generate_content(
-                model="gemini-2.0-flash",
-                contents=[
-                    {"text": prompt},
-                    {"inline_data": {"mime_type": "image/jpeg", "data": image_bytes}}
-                ],
-                config={"temperature": 0.4}
-            )
-            
-            # Lấy văn bản được nhận dạng
-            extracted_text = response.text
-            
-            if extracted_text:
-                # Thêm văn bản được trích xuất
-                doc.add_paragraph(extracted_text)
+            if file_ext in ['.docx', '.doc']:
+                # Xử lý file Word
+                docx_doc = Document(file)
+                text = ''
+                for para in docx_doc.paragraphs:
+                    text += para.text + '\n'
                 
-                # Thêm dòng ngăn cách
-                doc.add_paragraph('---')
+                if text.strip():
+                    extracted_texts.append({
+                        'filename': file.filename,
+                        'text': text
+                    })
+                    
+                    if mode == 'translate':
+                        # Dịch văn bản
+                        target_langs = request.form.getlist('target_langs[]')
+                        for lang in target_langs:
+                            # Thêm thông tin về thể loại và phong cách vào prompt
+                            prompt = f"""
+                                Hãy dịch đoạn văn bản sau sang {getLangName(lang)}.
+                                Thể loại: {', '.join(genres) if genres else 'Không xác định'}
+                                Phong cách: {', '.join(styles) if styles else 'Không xác định'}
+                                
+                                Văn bản cần dịch:
+                                {text}
+                            """
+                            
+                            response = model.generate_content(
+                                model="gemini-2.0-flash",
+                                contents=prompt,
+                                config={"temperature": 0.4}
+                            )
+                            
+                            if response.text:
+                                doc.add_paragraph(f"=== {getLangName(lang)} ===")
+                                doc.add_paragraph(response.text)
+                                doc.add_paragraph('---')
+                    else:
+                        # OCR mode
+                        doc.add_paragraph(text)
+                        doc.add_paragraph('---')
+                        
+            else:
+                # Xử lý file ảnh
+                image_bytes = file.read()
                 
-                extracted_texts.append({
-                    'filename': file.filename,
-                    'text': extracted_text
-                })
+                if mode == 'translate':
+                    prompt = f"""
+                        Hãy dịch tất cả các đoạn văn bản trong các bóng thoại của ảnh truyện tranh này.
+                        Thể loại: {', '.join(genres) if genres else 'Không xác định'}
+                        Phong cách: {', '.join(styles) if styles else 'Không xác định'}
+                        
+                        Chỉ trả về nội dung văn bản đã dịch, không cần giải thích thêm.
+                    """
+                else:
+                    prompt = """
+                        Hãy nhận dạng và liệt kê tất cả các đoạn văn bản trong các bóng thoại của ảnh truyện tranh này.
+                        Mỗi bóng thoại sẽ được đánh số thứ tự và nội dung của nó.
+                        Chỉ trả về nội dung văn bản, không cần giải thích thêm.
+                    """
+                
+                # Gửi yêu cầu đến Gemini API
+                response = model.generate_content(
+                    model="gemini-2.0-flash",
+                    contents=[
+                        {"text": prompt},
+                        {"inline_data": {"mime_type": "image/jpeg", "data": image_bytes}}
+                    ],
+                    config={"temperature": 0.4}
+                )
+                
+                # Lấy văn bản được nhận dạng
+                extracted_text = response.text
+                
+                if extracted_text:
+                    extracted_texts.append({
+                        'filename': file.filename,
+                        'text': extracted_text
+                    })
+                    
+                    if mode == 'translate':
+                        # Dịch văn bản
+                        target_langs = request.form.getlist('target_langs[]')
+                        for lang in target_langs:
+                            prompt = f"""
+                                Hãy dịch đoạn văn bản sau sang {getLangName(lang)}.
+                                Thể loại: {', '.join(genres) if genres else 'Không xác định'}
+                                Phong cách: {', '.join(styles) if styles else 'Không xác định'}
+                                
+                                Văn bản cần dịch:
+                                {extracted_text}
+                            """
+                            
+                            response = model.generate_content(
+                                model="gemini-2.0-flash",
+                                contents=prompt,
+                                config={"temperature": 0.4}
+                            )
+                            
+                            if response.text:
+                                doc.add_paragraph(f"=== {getLangName(lang)} ===")
+                                doc.add_paragraph(response.text)
+                                doc.add_paragraph('---')
+                    else:
+                        # OCR mode
+                        doc.add_paragraph(extracted_text)
+                        doc.add_paragraph('---')
+        
+        if not extracted_texts:
+            return jsonify({'error': 'Không tìm thấy văn bản nào để xử lý'})
         
         # Lưu tài liệu
         output_filename = f'VBCĐ_{int(time.time())}.docx'

@@ -1,334 +1,716 @@
-{% extends "base.html" %}
-
-{% block title %}Dịch văn bản - Image Processing Tools{% endblock %}
-
-{% block content %}
+{% extends "base.html" %} {% block title %}Dịch văn bản - Image Processing
+Tools{% endblock %} {% block content %}
 <div class="container">
-    <h2 class="mb-4">Dịch văn bản</h2>
-    
-    <div class="card">
-        <div class="card-body">
-            <div class="alert alert-info mb-4">
-                <i class="fas fa-info-circle me-2"></i>
-                <strong>Lưu ý:</strong> Để sử dụng tính năng dịch tự động, bạn cần cung cấp API key của Google Gemini.
-                <a href="https://makersuite.google.com/app/apikey" target="_blank" class="alert-link">Nhận API key tại đây</a>
-            </div>
-            
-            <form id="translateForm" enctype="multipart/form-data">
-                <div class="mb-3">
-                    <label for="files" class="form-label">Chọn ảnh cần dịch</label>
-                    <input type="file" class="form-control" id="files" name="files" multiple accept="image/*" required>
-                </div>
-                
-                <div class="mb-3">
-                    <label for="apiKey" class="form-label">API Key Gemini</label>
-                    <div class="input-group">
-                        <input type="password" class="form-control" id="apiKey" name="api_key" required>
-                        <button type="button" class="btn btn-outline-secondary" id="saveApiKey">
-                            <i class="fas fa-save"></i>
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary" id="toggleApiKey">
-                            <i class="fas fa-eye"></i>
-                        </button>
-                    </div>
-                    <div class="form-text">Nhấn nút lưu để tái sử dụng API key cho lần sau</div>
-                </div>
-                
-                <div class="mb-3">
-                    <label class="form-label">Ngôn ngữ đích</label>
-                    <div class="row">
-                        <div class="col-md-3">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="target_langs[]" value="vi" id="target_vi" checked>
-                                <label class="form-check-label" for="target_vi">Tiếng Việt</label>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="target_langs[]" value="en" id="target_en">
-                                <label class="form-check-label" for="target_en">Tiếng Anh</label>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="target_langs[]" value="ja" id="target_ja">
-                                <label class="form-check-label" for="target_ja">Tiếng Nhật</label>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="target_langs[]" value="ko" id="target_ko">
-                                <label class="form-check-label" for="target_ko">Tiếng Hàn</label>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="mb-3">
-                    <label for="genre" class="form-label">Thể loại truyện</label>
-                    <select class="form-select" id="genre" name="genre">
-                        <option value="">Không xác định</option>
-                        <option value="drama">Drama - Tình cảm</option>
-                        <option value="adult">Người lớn</option>
-                        <option value="romance">Ngôn tình</option>
-                        <option value="comedy">Hài hước</option>
-                        <option value="bl">Đam mỹ</option>
-                        <option value="wuxia">Kiếm hiệp</option>
-                        <option value="action">Hành động</option>
-                    </select>
-                </div>
-                
-                <button type="submit" class="btn btn-primary">
-                    <i class="fas fa-language me-2"></i>Dịch văn bản
-                </button>
-            </form>
-            
-            <!-- Selected Files Preview -->
-            <div id="selectedFiles" class="mt-4" style="display: none;">
-                <h6 class="mb-3">File đã chọn:</h6>
-                <div class="list-group" id="fileList">
-                    <!-- Danh sách file sẽ được thêm vào đây -->
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Result Section -->
-    <div id="resultSection" class="mt-4" style="display: none;">
-        <div class="card">
-            <div class="card-body">
-                <h6 class="card-title">Kết quả xử lý</h6>
-                <div id="wordFiles" class="mb-3">
-                    <!-- Danh sách file Word sẽ được thêm vào đây -->
-                </div>
-                <div class="d-flex gap-2">
-                    <button id="downloadAll" class="btn btn-success">
-                        <i class="fas fa-download me-2"></i>Tải tất cả
-                    </button>
-                    <button id="mergeFiles" class="btn btn-info">
-                        <i class="fas fa-file-word me-2"></i>Gộp file
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-{% endblock %}
+  <h2 class="mb-4">Dịch văn bản</h2>
 
-{% block scripts %}
+  <div class="card">
+    <div class="card-body">
+      <div class="alert alert-info mb-4">
+        <i class="fas fa-info-circle me-2"></i>
+        <strong>Lưu ý:</strong> Để sử dụng tính năng dịch tự động, bạn cần cung
+        cấp API key của Google Gemini.
+        <a
+          href="https://makersuite.google.com/app/apikey"
+          target="_blank"
+          class="alert-link"
+          >Nhận API key tại đây</a
+        >
+      </div>
+
+      <form id="translateForm" enctype="multipart/form-data">
+        <div class="mb-3">
+          <label for="files" class="form-label">Chọn file cần dịch</label>
+          <input
+            type="file"
+            class="form-control"
+            id="files"
+            name="files"
+            multiple
+            accept="image/*,.doc,.docx"
+            required
+          />
+          <div class="form-text">
+            Hỗ trợ file ảnh và file Word (.doc, .docx)
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label for="apiKey" class="form-label">API Key Gemini</label>
+          <div class="input-group">
+            <input
+              type="password"
+              class="form-control"
+              id="apiKey"
+              name="api_key"
+              required
+            />
+            <button
+              type="button"
+              class="btn btn-outline-secondary"
+              id="saveApiKey"
+            >
+              <i class="fas fa-save"></i>
+            </button>
+            <button
+              type="button"
+              class="btn btn-outline-secondary"
+              id="toggleApiKey"
+            >
+              <i class="fas fa-eye"></i>
+            </button>
+          </div>
+          <div class="form-text">
+            Nhấn nút lưu để tái sử dụng API key cho lần sau
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Ngôn ngữ đích</label>
+          <div class="row">
+            <div class="col-md-3">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="target_langs[]"
+                  value="vi"
+                  id="target_vi"
+                  checked
+                />
+                <label class="form-check-label" for="target_vi"
+                  >Tiếng Việt</label
+                >
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="target_langs[]"
+                  value="en"
+                  id="target_en"
+                />
+                <label class="form-check-label" for="target_en"
+                  >Tiếng Anh</label
+                >
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="target_langs[]"
+                  value="ja"
+                  id="target_ja"
+                />
+                <label class="form-check-label" for="target_ja"
+                  >Tiếng Nhật</label
+                >
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="target_langs[]"
+                  value="ko"
+                  id="target_ko"
+                />
+                <label class="form-check-label" for="target_ko"
+                  >Tiếng Hàn</label
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Thể loại truyện</label>
+          <div class="row">
+            <div class="col-md-4">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="genres[]"
+                  value="drama"
+                  id="genre_drama"
+                />
+                <label class="form-check-label" for="genre_drama"
+                  >Drama - Tình cảm</label
+                >
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="genres[]"
+                  value="romance"
+                  id="genre_romance"
+                />
+                <label class="form-check-label" for="genre_romance"
+                  >Ngôn tình</label
+                >
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="genres[]"
+                  value="comedy"
+                  id="genre_comedy"
+                />
+                <label class="form-check-label" for="genre_comedy"
+                  >Hài hước</label
+                >
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="genres[]"
+                  value="action"
+                  id="genre_action"
+                />
+                <label class="form-check-label" for="genre_action"
+                  >Hành động</label
+                >
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="genres[]"
+                  value="wuxia"
+                  id="genre_wuxia"
+                />
+                <label class="form-check-label" for="genre_wuxia"
+                  >Kiếm hiệp</label
+                >
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="genres[]"
+                  value="bl"
+                  id="genre_bl"
+                />
+                <label class="form-check-label" for="genre_bl">Đam mỹ</label>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="genres[]"
+                  value="gl"
+                  id="genre_gl"
+                />
+                <label class="form-check-label" for="genre_gl">Bách hợp</label>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="genres[]"
+                  value="adult"
+                  id="genre_adult"
+                />
+                <label class="form-check-label" for="genre_adult"
+                  >Người lớn</label
+                >
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="genres[]"
+                  value="horror"
+                  id="genre_horror"
+                />
+                <label class="form-check-label" for="genre_horror"
+                  >Kinh dị</label
+                >
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="genres[]"
+                  value="mystery"
+                  id="genre_mystery"
+                />
+                <label class="form-check-label" for="genre_mystery"
+                  >Bí ẩn</label
+                >
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="genres[]"
+                  value="sci-fi"
+                  id="genre_scifi"
+                />
+                <label class="form-check-label" for="genre_scifi"
+                  >Khoa học viễn tưởng</label
+                >
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="genres[]"
+                  value="fantasy"
+                  id="genre_fantasy"
+                />
+                <label class="form-check-label" for="genre_fantasy"
+                  >Giả tưởng</label
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Phong cách truyện</label>
+          <div class="row">
+            <div class="col-md-4">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="styles[]"
+                  value="slice_of_life"
+                  id="style_slice"
+                />
+                <label class="form-check-label" for="style_slice"
+                  >Đời thường</label
+                >
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="styles[]"
+                  value="school_life"
+                  id="style_school"
+                />
+                <label class="form-check-label" for="style_school"
+                  >Học đường</label
+                >
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="styles[]"
+                  value="isekai"
+                  id="style_isekai"
+                />
+                <label class="form-check-label" for="style_isekai"
+                  >Xuyên không</label
+                >
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="styles[]"
+                  value="reincarnation"
+                  id="style_reincarn"
+                />
+                <label class="form-check-label" for="style_reincarn"
+                  >Đầu thai</label
+                >
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="styles[]"
+                  value="game"
+                  id="style_game"
+                />
+                <label class="form-check-label" for="style_game">Game</label>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="styles[]"
+                  value="martial_arts"
+                  id="style_martial"
+                />
+                <label class="form-check-label" for="style_martial"
+                  >Võ thuật</label
+                >
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="styles[]"
+                  value="cultivation"
+                  id="style_cultivation"
+                />
+                <label class="form-check-label" for="style_cultivation"
+                  >Tu tiên</label
+                >
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="styles[]"
+                  value="system"
+                  id="style_system"
+                />
+                <label class="form-check-label" for="style_system"
+                  >Hệ thống</label
+                >
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="styles[]"
+                  value="apocalypse"
+                  id="style_apocalypse"
+                />
+                <label class="form-check-label" for="style_apocalypse"
+                  >Tận thế</label
+                >
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="form-check">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  name="styles[]"
+                  value="virtual_reality"
+                  id="style_vr"
+                />
+                <label class="form-check-label" for="style_vr"
+                  >Thực tế ảo</label
+                >
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary">
+          <i class="fas fa-language me-2"></i>Dịch văn bản
+        </button>
+      </form>
+
+      <!-- Selected Files Preview -->
+      <div id="selectedFiles" class="mt-4" style="display: none">
+        <h6 class="mb-3">File đã chọn:</h6>
+        <div class="list-group" id="fileList">
+          <!-- Danh sách file sẽ được thêm vào đây -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Result Section -->
+  <div id="resultSection" class="mt-4" style="display: none">
+    <div class="card">
+      <div class="card-body">
+        <h6 class="card-title">Kết quả xử lý</h6>
+        <div id="wordFiles" class="mb-3">
+          <!-- Danh sách file Word sẽ được thêm vào đây -->
+        </div>
+        <div class="d-flex gap-2">
+          <button id="downloadAll" class="btn btn-success">
+            <i class="fas fa-download me-2"></i>Tải tất cả
+          </button>
+          <button id="mergeFiles" class="btn btn-info">
+            <i class="fas fa-file-word me-2"></i>Gộp file
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %} {% block scripts %}
 <script>
-document.addEventListener('DOMContentLoaded', function() {
+  document.addEventListener("DOMContentLoaded", function () {
     // Highlight active sidebar item
-    document.querySelector('.sidebar-link[href="/translate"]').classList.add('active');
-    
-    const fileInput = document.getElementById('files');
-    const selectedFiles = document.getElementById('selectedFiles');
-    const fileList = document.getElementById('fileList');
-    const apiKeyInput = document.getElementById('apiKey');
-    
+    document
+      .querySelector('.sidebar-link[href="/translate"]')
+      .classList.add("active");
+
+    const fileInput = document.getElementById("files");
+    const selectedFiles = document.getElementById("selectedFiles");
+    const fileList = document.getElementById("fileList");
+    const apiKeyInput = document.getElementById("apiKey");
+
     // Load API key đã lưu
-    const savedApiKey = localStorage.getItem('translateApiKey');
+    const savedApiKey = localStorage.getItem("translateApiKey");
     if (savedApiKey) {
-        apiKeyInput.value = savedApiKey;
+      apiKeyInput.value = savedApiKey;
     }
-    
+
     // Xử lý lưu API key
-    document.getElementById('saveApiKey').addEventListener('click', function() {
+    document
+      .getElementById("saveApiKey")
+      .addEventListener("click", function () {
         const apiKey = apiKeyInput.value;
         if (apiKey) {
-            localStorage.setItem('translateApiKey', apiKey);
-            Swal.fire({
-                icon: 'success',
-                title: 'Thành công!',
-                text: 'Đã lưu API key thành công',
-                toast: true,
-                position: 'top-end',
-                showConfirmButton: false,
-                timer: 3000
-            });
+          localStorage.setItem("translateApiKey", apiKey);
+          Swal.fire({
+            icon: "success",
+            title: "Thành công!",
+            text: "Đã lưu API key thành công",
+            toast: true,
+            position: "top-end",
+            showConfirmButton: false,
+            timer: 3000,
+          });
         }
-    });
-    
+      });
+
     // Xử lý hiển thị/ẩn API key
-    document.getElementById('toggleApiKey').addEventListener('click', function() {
-        const icon = this.querySelector('i');
-        if (apiKeyInput.type === 'password') {
-            apiKeyInput.type = 'text';
-            icon.className = 'fas fa-eye-slash';
+    document
+      .getElementById("toggleApiKey")
+      .addEventListener("click", function () {
+        const icon = this.querySelector("i");
+        if (apiKeyInput.type === "password") {
+          apiKeyInput.type = "text";
+          icon.className = "fas fa-eye-slash";
         } else {
-            apiKeyInput.type = 'password';
-            icon.className = 'fas fa-eye';
+          apiKeyInput.type = "password";
+          icon.className = "fas fa-eye";
         }
-    });
-    
+      });
+
     // Hiển thị danh sách file đã chọn
-    fileInput.addEventListener('change', function() {
-        fileList.innerHTML = '';
-        
-        if (this.files.length > 0) {
-            Array.from(this.files).forEach(file => {
-                const item = document.createElement('div');
-                item.className = 'list-group-item d-flex justify-content-between align-items-center';
-                item.innerHTML = `
+    fileInput.addEventListener("change", function () {
+      fileList.innerHTML = "";
+
+      if (this.files.length > 0) {
+        Array.from(this.files).forEach((file) => {
+          const item = document.createElement("div");
+          item.className =
+            "list-group-item d-flex justify-content-between align-items-center";
+          item.innerHTML = `
                     <div>
-                        <i class="fas fa-image text-primary me-2"></i>
+                        <i class="fas ${
+                          file.type.startsWith("image/")
+                            ? "fa-image"
+                            : "fa-file-word"
+                        } text-primary me-2"></i>
                         <span>${file.name}</span>
                     </div>
-                    <span class="badge bg-primary rounded-pill">${(file.size / 1024).toFixed(2)} KB</span>
+                    <span class="badge bg-primary rounded-pill">${(
+                      file.size / 1024
+                    ).toFixed(2)} KB</span>
                 `;
-                fileList.appendChild(item);
-            });
-            
-            selectedFiles.style.display = 'block';
-        } else {
-            selectedFiles.style.display = 'none';
-        }
+          fileList.appendChild(item);
+        });
+
+        selectedFiles.style.display = "block";
+      } else {
+        selectedFiles.style.display = "none";
+      }
     });
-    
+
     // Xử lý form submit
-    document.getElementById('translateForm').addEventListener('submit', async function(e) {
+    document
+      .getElementById("translateForm")
+      .addEventListener("submit", async function (e) {
         e.preventDefault();
         showLoading();
-        
+
         const formData = new FormData(this);
-        formData.append('mode', 'translate');
-        
+        formData.append("mode", "translate");
+
         const submitBtn = this.querySelector('button[type="submit"]');
         submitBtn.disabled = true;
-        
+
         try {
-            const response = await fetch('/execute/ocr', {
-                method: 'POST',
-                body: formData
-            });
-            
-            const result = await response.json();
-            
-            if (result.error) {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Lỗi!',
-                    text: result.error
-                });
-            } else {
-                showResult(result);
-            }
-        } catch (error) {
+          const response = await fetch("/execute/ocr", {
+            method: "POST",
+            body: formData,
+          });
+
+          const result = await response.json();
+
+          if (result.error) {
             Swal.fire({
-                icon: 'error',
-                title: 'Lỗi!',
-                text: 'Có lỗi xảy ra khi dịch văn bản'
+              icon: "error",
+              title: "Lỗi!",
+              text: result.error,
             });
+          } else {
+            showResult(result);
+          }
+        } catch (error) {
+          Swal.fire({
+            icon: "error",
+            title: "Lỗi!",
+            text: "Có lỗi xảy ra khi dịch văn bản",
+          });
         } finally {
-            hideLoading();
-            submitBtn.disabled = false;
+          hideLoading();
+          submitBtn.disabled = false;
         }
-    });
-    
+      });
+
     // Hiển thị kết quả
     function showResult(result) {
-        const resultSection = document.getElementById('resultSection');
-        const wordFiles = document.getElementById('wordFiles');
-        
-        wordFiles.innerHTML = '';
-        
-        if (result.word_files) {
-            Object.entries(result.word_files).forEach(([lang, files]) => {
-                const langDiv = document.createElement('div');
-                langDiv.className = 'mb-3';
-                
-                const langTitle = document.createElement('h6');
-                langTitle.className = 'text-muted mb-2';
-                langTitle.textContent = `Ngôn ngữ: ${getLangName(lang)}`;
-                
-                const fileList = document.createElement('div');
-                fileList.className = 'list-group';
-                
-                files.forEach(file => {
-                    const item = document.createElement('a');
-                    item.href = `/download/${file}`;
-                    item.className = 'list-group-item list-group-item-action';
-                    item.innerHTML = `<i class="fas fa-file-word me-2"></i>${file}`;
-                    fileList.appendChild(item);
-                });
-                
-                langDiv.appendChild(langTitle);
-                langDiv.appendChild(fileList);
-                wordFiles.appendChild(langDiv);
-            });
-        }
-        
-        resultSection.style.display = 'block';
-        
-        // Cuộn đến kết quả
-        resultSection.scrollIntoView({ behavior: 'smooth' });
-    }
-    
-    // Xử lý nút tải tất cả
-    document.getElementById('downloadAll').addEventListener('click', function() {
-        const links = document.querySelectorAll('#wordFiles a');
-        links.forEach(link => {
-            window.open(link.href, '_blank');
-        });
-    });
-    
-    // Xử lý nút gộp file
-    document.getElementById('mergeFiles').addEventListener('click', async function() {
-        showLoading();
-        
-        try {
-            const response = await fetch('/execute/merge_ocr', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    files: Array.from(document.querySelectorAll('#wordFiles a')).map(a => a.href.split('/').pop())
-                })
-            });
-            
-            const result = await response.json();
-            
-            if (result.error) {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Lỗi!',
-                    text: result.error
-                });
-            } else {
-                window.open(`/download/${result.output_file}`, '_blank');
-            }
-        } catch (error) {
-            Swal.fire({
-                icon: 'error',
-                title: 'Lỗi!',
-                text: 'Có lỗi xảy ra khi gộp file'
-            });
-        } finally {
-            hideLoading();
-        }
-    });
-});
+      const resultSection = document.getElementById("resultSection");
+      const wordFiles = document.getElementById("wordFiles");
 
-// Chuyển đổi mã ngôn ngữ thành tên
-function getLangName(code) {
+      wordFiles.innerHTML = "";
+
+      if (result.word_files) {
+        Object.entries(result.word_files).forEach(([lang, files]) => {
+          const langDiv = document.createElement("div");
+          langDiv.className = "mb-3";
+
+          const langTitle = document.createElement("h6");
+          langTitle.className = "text-muted mb-2";
+          langTitle.textContent = `Ngôn ngữ: ${getLangName(lang)}`;
+
+          const fileList = document.createElement("div");
+          fileList.className = "list-group";
+
+          files.forEach((file) => {
+            const item = document.createElement("a");
+            item.href = `/download/${file}`;
+            item.className = "list-group-item list-group-item-action";
+            item.innerHTML = `<i class="fas fa-file-word me-2"></i>${file}`;
+            fileList.appendChild(item);
+          });
+
+          langDiv.appendChild(langTitle);
+          langDiv.appendChild(fileList);
+          wordFiles.appendChild(langDiv);
+        });
+      }
+
+      resultSection.style.display = "block";
+
+      // Cuộn đến kết quả
+      resultSection.scrollIntoView({ behavior: "smooth" });
+    }
+
+    // Xử lý nút tải tất cả
+    document
+      .getElementById("downloadAll")
+      .addEventListener("click", function () {
+        const links = document.querySelectorAll("#wordFiles a");
+        links.forEach((link) => {
+          window.open(link.href, "_blank");
+        });
+      });
+
+    // Xử lý nút gộp file
+    document
+      .getElementById("mergeFiles")
+      .addEventListener("click", async function () {
+        showLoading();
+
+        try {
+          const response = await fetch("/execute/merge_ocr", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              files: Array.from(document.querySelectorAll("#wordFiles a")).map(
+                (a) => a.href.split("/").pop()
+              ),
+            }),
+          });
+
+          const result = await response.json();
+
+          if (result.error) {
+            Swal.fire({
+              icon: "error",
+              title: "Lỗi!",
+              text: result.error,
+            });
+          } else {
+            window.open(`/download/${result.output_file}`, "_blank");
+          }
+        } catch (error) {
+          Swal.fire({
+            icon: "error",
+            title: "Lỗi!",
+            text: "Có lỗi xảy ra khi gộp file",
+          });
+        } finally {
+          hideLoading();
+        }
+      });
+  });
+
+  // Chuyển đổi mã ngôn ngữ thành tên
+  function getLangName(code) {
     const langs = {
-        'vi': 'Tiếng Việt',
-        'en': 'Tiếng Anh',
-        'ja': 'Tiếng Nhật',
-        'ko': 'Tiếng Hàn'
+      vi: "Tiếng Việt",
+      en: "Tiếng Anh",
+      ja: "Tiếng Nhật",
+      ko: "Tiếng Hàn",
     };
     return langs[code] || code;
-}
+  }
 
-// Hiển thị loading
-function showLoading() {
-    document.querySelector('.loading').style.display = 'flex';
-}
+  // Hiển thị loading
+  function showLoading() {
+    document.querySelector(".loading").style.display = "flex";
+  }
 
-// Ẩn loading
-function hideLoading() {
-    document.querySelector('.loading').style.display = 'none';
-}
+  // Ẩn loading
+  function hideLoading() {
+    document.querySelector(".loading").style.display = "none";
+  }
 </script>
-{% endblock %} 
+{% endblock %}
