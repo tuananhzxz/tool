@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}Trang chủ - Image Processing Tools{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1 class="text-center mb-4">Công cụ xử lý ảnh</h1>
+    <div class="row">
+        {% for key, value in functions.items() %}
+        <div class="col-md-4 mb-4">
+            <div class="card function-card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">{{ value }}</h5>
+                    <a href="/function/{{ key }}" class="btn btn-primary">Sử dụng</a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %} 
