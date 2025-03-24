@@ -16,9 +16,10 @@ class ImageProcessor:
 
     def combine_images(self, images_per_group):
         """
-        Ghép các phần ảnh đã cắt thành một ảnh hoàn chỉnh theo chiều ngang
+        Ghép các phần ảnh đã cắt thành một ảnh hoàn chỉnh theo chiều dọc
         """
         try:
+            result_files = []
             # Sắp xếp ảnh theo số thứ tự
             self.image_files.sort(key=lambda x: int(re.search(r'\d+', x).group() if re.search(r'\d+', x) else 0))
             
@@ -26,70 +27,98 @@ class ImageProcessor:
             total_images = len(self.image_files)
             num_groups = (total_images + images_per_group - 1) // images_per_group
             
-            # Mở ảnh đầu tiên để lấy kích thước
-            with Image.open(os.path.join(self.folder_path, self.image_files[0])) as first_img:
-                part_width = first_img.width
-                part_height = first_img.height
-
-            # Ghép từng nhóm ảnh
+            # Mở và đọc tất cả ảnh trong nhóm
             for group_idx in range(num_groups):
                 start_idx = group_idx * images_per_group
                 end_idx = min(start_idx + images_per_group, total_images)
                 group_images = self.image_files[start_idx:end_idx]
                 
-                # Tạo ảnh mới với chiều cao bằng tổng các phần trong nhóm
-                total_height = part_height * len(group_images)
-                result = Image.new('RGB', (part_width, total_height))
-
-                # Ghép các phần ảnh theo chiều dọc
-                for idx, img_file in enumerate(group_images):
+                # Đọc và xử lý các ảnh trong nhóm
+                image_parts = []
+                max_width = 0
+                total_height = 0
+                
+                for img_file in group_images:
                     with Image.open(os.path.join(self.folder_path, img_file)) as img:
                         if img.mode == 'RGBA':
                             img = img.convert('RGB')
-                        result.paste(img, (0, idx * part_height))
-
-                # Lưu ảnh ghép với tên là tên thư mục + số nhóm
+                        image_parts.append(img.copy())
+                        max_width = max(max_width, img.width)
+                        total_height += img.height
+                
+                # Tạo ảnh mới
+                result = Image.new('RGB', (max_width, total_height))
+                
+                # Ghép các phần ảnh
+                y_offset = 0
+                for img in image_parts:
+                    # Đảm bảo ảnh có cùng chiều rộng
+                    if img.width != max_width:
+                        img = img.resize((max_width, img.height), Image.Resampling.LANCZOS)
+                    
+                    # Ghép ảnh vào kết quả
+                    result.paste(img, (0, y_offset))
+                    y_offset += img.height
+                
+                # Lưu ảnh ghép
                 output_path = os.path.join(self.folder_path, f"{self.folder_name}_group_{group_idx + 1}.jpg")
                 result.save(output_path, quality=95)
+                result_files.append(output_path)
+                
+                # Giải phóng bộ nhớ
+                for img in image_parts:
+                    img.close()
 
             # Xóa các ảnh gốc
             for img_file in self.image_files:
                 os.remove(os.path.join(self.folder_path, img_file))
 
             print(f"Đã ghép thành công thành {num_groups} ảnh")
+            return result_files
 
         except Exception as e:
             raise Exception(f"Lỗi khi ghép ảnh: {str(e)}")
 
-    def split_images(self, split_parts):
+    def split_images(self, min_height):
         """
-        Cắt ảnh thành nhiều phần bằng nhau theo chiều ngang
+        Cắt ảnh thành nhiều phần dựa trên chiều cao tối thiểu
+        :param min_height: Chiều cao tối thiểu cho mỗi phần (pixel)
+        :return: Danh sách đường dẫn các file đã cắt
         """
-        if len(self.image_files) != 1:
-            raise Exception("Vui lòng chỉ chọn một ảnh để cắt")
-
         try:
-            input_image = self.image_files[0]
-            with Image.open(os.path.join(self.folder_path, input_image)) as img:
-                if img.mode == 'RGBA':
-                    img = img.convert('RGB')
+            result_files = []
+            
+            # Xử lý từng ảnh trong thư mục
+            for input_image in self.image_files:
+                base_name = os.path.splitext(input_image)[0]
+                
+                with Image.open(os.path.join(self.folder_path, input_image)) as img:
+                    if img.mode == 'RGBA':
+                        img = img.convert('RGB')
 
-                width, height = img.size
-                part_height = height // split_parts
-
-                # Cắt và lưu từng phần theo chiều ngang
-                for i in range(split_parts):
-                    top = i * part_height
-                    bottom = top + part_height
-                    part = img.crop((0, top, width, bottom))
+                    width, height = img.size
                     
-                    # Lưu với tên là tên thư mục + số thứ tự
-                    output_path = os.path.join(self.folder_path, f"{self.folder_name}_{i+1}.jpg")
-                    part.save(output_path, quality=95)
+                    # Tính số phần cần cắt dựa trên chiều cao tối thiểu
+                    num_parts = math.ceil(height / min_height)
+                    part_height = height // num_parts  # Chiều cao thực tế của mỗi phần
+                    
+                    # Cắt và lưu từng phần
+                    for i in range(num_parts):
+                        top = i * part_height
+                        # Phần cuối cùng sẽ lấy đến hết chiều cao của ảnh
+                        bottom = height if i == num_parts - 1 else (i + 1) * part_height
+                        part = img.crop((0, top, width, bottom))
+                        
+                        # Tạo tên file với số thứ tự
+                        output_path = os.path.join(self.folder_path, f"{base_name}_part_{i+1}.jpg")
+                        part.save(output_path, quality=95)
+                        result_files.append(output_path)
 
-            # Xóa ảnh gốc
-            os.remove(os.path.join(self.folder_path, input_image))
-            print(f"Đã cắt ảnh thành {split_parts} phần")
+                # Xóa ảnh gốc sau khi đã cắt xong
+                os.remove(os.path.join(self.folder_path, input_image))
+                print(f"Đã cắt ảnh {input_image} thành {num_parts} phần")
+
+            return result_files
 
         except Exception as e:
             raise Exception(f"Lỗi khi cắt ảnh: {str(e)}")

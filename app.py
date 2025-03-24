@@ -2,7 +2,7 @@ import time
 from flask import Flask, render_template, request, jsonify, send_file
 import os
 from werkzeug.utils import secure_filename
-from PIL import Image
+from PIL import Image, ImageEnhance
 import shutil
 from changeImage import convert_images
 from cutmergeimage import ImageProcessor
@@ -20,6 +20,9 @@ from docx import Document
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
+from service.dowloadImg import (
+    download_selected_images,
+)
 
 # Load environment variables
 load_dotenv()
@@ -148,7 +151,8 @@ def execute_cut_merge_image():
     
     files = request.files.getlist('files')
     action = request.form.get('action')
-    parts = int(request.form.get('parts', 2))
+    min_height = int(request.form.get('min_height', 2500))  # Chiều cao tối thiểu mặc định 2500px
+    images_per_group = int(request.form.get('parts', 2))  # Số ảnh mỗi nhóm khi ghép
     width = request.form.get('width')
     height = request.form.get('height')
     
@@ -157,18 +161,22 @@ def execute_cut_merge_image():
         
     # Tạo thư mục tạm thời
     temp_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'temp_process')
+    output_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'output_process')
     
-    if os.path.exists(temp_dir):
-        shutil.rmtree(temp_dir)
-    os.makedirs(temp_dir)
+    for dir_path in [temp_dir, output_dir]:
+        if os.path.exists(dir_path):
+            shutil.rmtree(dir_path)
+        os.makedirs(dir_path)
         
     try:
         # Lưu các file
+        saved_files = []
         for file in files:
             if file.filename:
                 filename = secure_filename(file.filename)
                 file_path = os.path.join(temp_dir, filename)
                 file.save(file_path)
+                saved_files.append(file_path)
                 
                 # Resize ảnh nếu có yêu cầu
                 if width or height:
@@ -180,127 +188,45 @@ def execute_cut_merge_image():
         
         processor = ImageProcessor(temp_dir)
         
-        if action == 'split':
-            processor.split_images(parts)
-        else:  # merge
-            processor.combine_images(parts)
-        
-        # Tạo file zip chứa kết quả
-        zip_path = os.path.join(app.config['UPLOAD_FOLDER'], 'processed_images.zip')
-        with zipfile.ZipFile(zip_path, 'w') as zipf:
-            for root, dirs, files in os.walk(temp_dir):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    arcname = os.path.relpath(file_path, temp_dir)
-                    zipf.write(file_path, arcname)
-        
-        # Xóa thư mục tạm
-        shutil.rmtree(temp_dir)
-        
-        return jsonify({
-            'message': 'Xử lý thành công!',
-            'output_files': ['processed_images.zip']
-        })
-        
-    except Exception as e:
-        return handle_error(e)
-
-@app.route('/execute/dowloaf', methods=['POST'])
-def execute_download():
-    url = request.form.get('url')
-    html_code = request.form.get('html_code')
-    
-    if not url and not html_code:
-        return jsonify({'error': 'Vui lòng cung cấp URL hoặc mã HTML'})
-    
-    try:
-        # Tạo thư mục tạm thời
-        temp_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'temp_download')
-        if os.path.exists(temp_dir):
-            shutil.rmtree(temp_dir)
-        os.makedirs(temp_dir)
-        
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Cache-Control': 'max-age=0'
-        }
-        
-        if url:
-            # Kiểm tra nếu là trang webtoon
-            if 'newtoki' in url or 'webtoon' in url:
-                # Tải trang web với bypass cloudflare
-                session = requests.Session()
-                response = session.get(url, headers=headers)
-                soup = BeautifulSoup(response.text, 'html.parser')
-                
-                # Tìm danh sách chapter
-                chapters = []
-                if 'newtoki' in url:
-                    chapter_links = soup.find_all('a', href=re.compile(r'/webtoon/\d+'))
-                    for link in chapter_links:
-                        chapters.append({
-                            'title': link.text.strip(),
-                            'url': 'https://newtoki.com' + link['href']
-                        })
-                elif 'webtoon' in url:
-                    chapter_links = soup.find_all('a', href=re.compile(r'/episode/\d+'))
-                    for link in chapter_links:
-                        chapters.append({
-                            'title': link.text.strip(),
-                            'url': 'https://www.webtoons.com' + link['href']
-                        })
-                
-                if chapters:
-                    return jsonify({
-                        'message': 'Đã tìm thấy danh sách chapter',
-                        'chapters': chapters
-                    })
+        try:
+            if action == 'split':
+                result_files = processor.split_images(min_height)
+            else:  # merge
+                if len(saved_files) < images_per_group:
+                    return jsonify({'error': f'Số lượng ảnh ({len(saved_files)}) phải lớn hơn hoặc bằng số ảnh mỗi nhóm ({images_per_group})'})
+                result_files = processor.combine_images(images_per_group)
             
-            # Tải trang web
-            session = requests.Session()
-            response = session.get(url, headers=headers)
-            html_content = response.text
-        else:
-            html_content = html_code
-        
-        # Phân tích HTML
-        soup = BeautifulSoup(html_content, 'html.parser')
-        
-        # Tìm tất cả thẻ img và source
-        images = []
-        for img in soup.find_all(['img', 'source']):
-            src = img.get('src') or img.get('data-src') or img.get('srcset')
-            if src:
-                # Xử lý srcset
-                if 'srcset' in img.attrs:
-                    srcs = [s.strip().split()[0] for s in src.split(',')]
-                    src = srcs[-1]  # Lấy ảnh có độ phân giải cao nhất
-                
-                # Chuẩn hóa URL
-                if not src.startswith('http'):
-                    if src.startswith('//'):
-                        src = 'https:' + src
-                    else:
-                        src = 'https://' + src
-                
-                images.append({
-                    'url': src,
-                    'alt': img.get('alt', ''),
-                    'preview': src
-                })
-        
-        if not images:
-            return jsonify({'error': 'Không tìm thấy ảnh nào'})
-        
-        return jsonify({
-            'message': f'Đã tìm thấy {len(images)} ảnh',
-            'images': images
-        })
-        
+            if not result_files:
+                return jsonify({'error': 'Không thể xử lý ảnh. Vui lòng kiểm tra lại các tham số.'})
+            
+            # Copy các file kết quả vào thư mục output với tên mới
+            for i, file_path in enumerate(result_files, 1):
+                file_ext = os.path.splitext(file_path)[1]
+                new_name = f"{i}{file_ext}"
+                new_path = os.path.join(output_dir, new_name)
+                shutil.copy2(file_path, new_path)
+            
+            # Tạo file zip chứa kết quả
+            zip_path = os.path.join(app.config['UPLOAD_FOLDER'], 'processed_images.zip')
+            with zipfile.ZipFile(zip_path, 'w') as zipf:
+                for root, dirs, files in os.walk(output_dir):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        arcname = os.path.relpath(file_path, output_dir)
+                        zipf.write(file_path, arcname)
+            
+            # Xóa thư mục tạm
+            shutil.rmtree(temp_dir)
+            shutil.rmtree(output_dir)
+            
+            return jsonify({
+                'message': 'Xử lý thành công!',
+                'output_files': ['processed_images.zip']
+            })
+            
+        except Exception as e:
+            return jsonify({'error': str(e)})
+            
     except Exception as e:
         return handle_error(e)
 
@@ -401,16 +327,12 @@ def execute_ocr():
     try:
         files = request.files.getlist('files')
         api_key = request.form.get('api_key')
-        mode = request.form.get('mode', 'ocr')  # Thêm mode để phân biệt OCR và dịch
-        genres = request.form.getlist('genres[]')  # Lấy danh sách thể loại
-        styles = request.form.getlist('styles[]')  # Lấy danh sách phong cách
+        mode = request.form.get('mode', 'ocr')
+        genres = request.form.getlist('genres[]')
+        styles = request.form.getlist('styles[]')
         
         if not files or not api_key:
             return jsonify({'error': 'Vui lòng cung cấp file và API key'})
-        
-        # Khởi tạo client Gemini với API key
-        client = genai.Client(api_key=api_key)
-        model = client.models
         
         # Tạo một tài liệu Word mới
         doc = Document()
@@ -426,125 +348,44 @@ def execute_ocr():
             doc.add_paragraph('---')
         
         extracted_texts = []
+        processed_files = []
+        failed_files = []
         
-        # Xử lý từng file
+        # Xử lý từng file một
         for file in files:
             if not file.filename:
                 continue
                 
-            # Kiểm tra định dạng file
-            file_ext = os.path.splitext(file.filename)[1].lower()
-            
-            if file_ext in ['.docx', '.doc']:
-                # Xử lý file Word
-                docx_doc = Document(file)
-                text = ''
-                for para in docx_doc.paragraphs:
-                    text += para.text + '\n'
+            try:
+                # Kiểm tra định dạng file
+                file_ext = os.path.splitext(file.filename)[1].lower()
                 
-                if text.strip():
-                    extracted_texts.append({
-                        'filename': file.filename,
-                        'text': text
-                    })
-                    
-                    if mode == 'translate':
-                        # Dịch văn bản
-                        target_langs = request.form.getlist('target_langs[]')
-                        for lang in target_langs:
-                            # Thêm thông tin về thể loại và phong cách vào prompt
-                            prompt = f"""
-                                Hãy dịch đoạn văn bản sau sang {getLangName(lang)}.
-                                Thể loại: {', '.join(genres) if genres else 'Không xác định'}
-                                Phong cách: {', '.join(styles) if styles else 'Không xác định'}
-                                
-                                Văn bản cần dịch:
-                                {text}
-                            """
-                            
-                            response = model.generate_content(
-                                model="gemini-2.0-flash",
-                                contents=prompt,
-                                config={"temperature": 0.4}
-                            )
-                            
-                            if response.text:
-                                doc.add_paragraph(f"=== {getLangName(lang)} ===")
-                                doc.add_paragraph(response.text)
-                                doc.add_paragraph('---')
+                if file_ext in ['.docx', '.doc']:
+                    # Xử lý file Word
+                    success = process_word_file(file, doc, mode, genres, styles, api_key)
+                    if success:
+                        processed_files.append(file.filename)
                     else:
-                        # OCR mode
-                        doc.add_paragraph(text)
-                        doc.add_paragraph('---')
+                        failed_files.append(file.filename)
                         
-            else:
-                # Xử lý file ảnh
-                image_bytes = file.read()
-                
-                if mode == 'translate':
-                    prompt = f"""
-                        Hãy dịch tất cả các đoạn văn bản trong các bóng thoại của ảnh truyện tranh này.
-                        Thể loại: {', '.join(genres) if genres else 'Không xác định'}
-                        Phong cách: {', '.join(styles) if styles else 'Không xác định'}
-                        
-                        Chỉ trả về nội dung văn bản đã dịch, không cần giải thích thêm.
-                    """
+                elif file_ext in ['.jpg', '.jpeg', '.png', '.webp']:
+                    # Xử lý file ảnh
+                    success = process_image_file(file, doc, mode, genres, styles, api_key)
+                    if success:
+                        processed_files.append(file.filename)
+                    else:
+                        failed_files.append(file.filename)
                 else:
-                    prompt = """
-                        Hãy nhận dạng và liệt kê tất cả các đoạn văn bản trong các bóng thoại của ảnh truyện tranh này.
-                        Mỗi bóng thoại sẽ được đánh số thứ tự và nội dung của nó.
-                        Chỉ trả về nội dung văn bản, không cần giải thích thêm.
-                    """
-                
-                # Gửi yêu cầu đến Gemini API
-                response = model.generate_content(
-                    model="gemini-2.0-flash",
-                    contents=[
-                        {"text": prompt},
-                        {"inline_data": {"mime_type": "image/jpeg", "data": image_bytes}}
-                    ],
-                    config={"temperature": 0.4}
-                )
-                
-                # Lấy văn bản được nhận dạng
-                extracted_text = response.text
-                
-                if extracted_text:
-                    extracted_texts.append({
-                        'filename': file.filename,
-                        'text': extracted_text
-                    })
+                    failed_files.append(file.filename)
+                    continue
                     
-                    if mode == 'translate':
-                        # Dịch văn bản
-                        target_langs = request.form.getlist('target_langs[]')
-                        for lang in target_langs:
-                            prompt = f"""
-                                Hãy dịch đoạn văn bản sau sang {getLangName(lang)}.
-                                Thể loại: {', '.join(genres) if genres else 'Không xác định'}
-                                Phong cách: {', '.join(styles) if styles else 'Không xác định'}
-                                
-                                Văn bản cần dịch:
-                                {extracted_text}
-                            """
-                            
-                            response = model.generate_content(
-                                model="gemini-2.0-flash",
-                                contents=prompt,
-                                config={"temperature": 0.4}
-                            )
-                            
-                            if response.text:
-                                doc.add_paragraph(f"=== {getLangName(lang)} ===")
-                                doc.add_paragraph(response.text)
-                                doc.add_paragraph('---')
-                    else:
-                        # OCR mode
-                        doc.add_paragraph(extracted_text)
-                        doc.add_paragraph('---')
+            except Exception as e:
+                print(f"Lỗi khi xử lý file {file.filename}: {str(e)}")
+                failed_files.append(file.filename)
+                continue
         
-        if not extracted_texts:
-            return jsonify({'error': 'Không tìm thấy văn bản nào để xử lý'})
+        if not processed_files:
+            return jsonify({'error': 'Không thể xử lý bất kỳ file nào'})
         
         # Lưu tài liệu
         output_filename = f'VBCĐ_{int(time.time())}.docx'
@@ -554,11 +395,157 @@ def execute_ocr():
         return jsonify({
             'success': True,
             'word_files': {'all': [output_filename]},
+            'processed_files': processed_files,
+            'failed_files': failed_files,
             'extracted_texts': extracted_texts
         })
         
     except Exception as e:
         return jsonify({'error': str(e)})
+
+def process_word_file(file, doc, mode, genres, styles, api_key):
+    try:
+        docx_doc = Document(file)
+        text = ''
+        for para in docx_doc.paragraphs:
+            text += para.text + '\n'
+        
+        if text.strip():
+            if mode == 'translate':
+                # Dịch văn bản
+                target_langs = request.form.getlist('target_langs[]')
+                for lang in target_langs:
+                    prompt = f"""
+                        Hãy dịch đoạn văn bản sau sang {getLangName(lang)}.
+                        Thể loại: {', '.join(genres) if genres else 'Không xác định'}
+                        Phong cách: {', '.join(styles) if styles else 'Không xác định'}
+                        
+                        Văn bản cần dịch:
+                        {text}
+                    """
+                    client = genai.Client(api_key=api_key)
+                    
+                    response = client.models.generate_content(
+                        model="gemini-2.0-flash",
+                        contents=prompt,
+                        config={"temperature": 0.2}
+                    )
+                    
+                    if response.text:
+                        doc.add_paragraph(f"=== {getLangName(lang)} ===")
+                        doc.add_paragraph(response.text)
+                        doc.add_paragraph('---')
+            else:
+                doc.add_paragraph(text)
+                doc.add_paragraph('---')
+        return True
+    except Exception as e:
+        print(f"Lỗi khi xử lý file Word {file.filename}: {str(e)}")
+        return False
+
+def process_image_file(file, doc, mode, genres, styles, api_key):
+    try:
+        # Đọc và xử lý ảnh
+        image_bytes = file.read()
+        img = Image.open(io.BytesIO(image_bytes))
+        
+        # Kiểm tra kích thước ảnh
+        max_size = (1920, 1080)
+        if img.size[0] > max_size[0] or img.size[1] > max_size[1]:
+            img.thumbnail(max_size, Image.Resampling.LANCZOS)
+        
+        # Chuyển sang grayscale và tăng độ tương phản
+        img = img.convert('L')
+        enhancer = ImageEnhance.Contrast(img)
+        img = enhancer.enhance(1.5)
+        
+        # Chuyển ảnh đã xử lý thành bytes
+        img_byte_arr = io.BytesIO()
+        img.save(img_byte_arr, format='PNG')
+        img_byte_arr = img_byte_arr.getvalue()
+        
+        # Tạo prompt cho việc nhận dạng văn bản
+        prompt = f"""
+            NHIỆM VỤ: Nhận dạng và trích xuất văn bản từ ảnh với độ chính xác cao nhất.
+            
+            YÊU CẦU CHẤT LƯỢNG:
+            1. Nhận dạng chính xác 100% nội dung văn bản, kể cả chữ nhỏ
+            2. Phân biệt rõ các đoạn văn bản khác nhau, các bóng thoại khác nhau
+            3. Giữ nguyên vị trí và thứ tự của các bóng thoại
+            4. Không bỏ sót bất kỳ ký tự nào
+            
+            QUY TẮC XỬ LÝ:
+            1. Loại bỏ các yếu tố không phải văn bản 
+            2. QUAN TRỌNG: Xử lý mỗi bóng thoại (speech bubble) như MỘT CÂU HOÀN CHỈNH TRÊN MỘT DÒNG DUY NHẤT
+            3. Mỗi bóng thoại riêng biệt sẽ được xuất ra thành một dòng văn bản riêng biệt
+            4. Giữ nguyên các dấu câu và định dạng đặc biệt
+            
+            ĐỊNH DẠNG ĐẦU RA:
+            - Mỗi bóng thoại trên một dòng riêng
+            - Giữ nguyên các dấu câu và định dạng
+            - Không thêm bất kỳ chú thích hay giải thích nào
+            - Không tách văn bản trong một bóng thoại thành nhiều dòng
+        """
+        
+        client = genai.Client(api_key=api_key)
+        
+        # Gửi yêu cầu đến Gemini API với cấu hình tối ưu
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=[
+                {"text": prompt},
+                {"inline_data": {"mime_type": "image/png", "data": img_byte_arr}}
+            ],
+            config={
+                "temperature": 0.1,  # Giảm temperature để tăng độ chính xác
+                "max_output_tokens": 2048,  # Tăng max tokens để xử lý văn bản dài
+                "top_p": 0.8,
+                "top_k": 40,
+                "candidate_count": 1
+            }
+        )
+        
+        if response.text:
+            # Thêm thông tin về file đang xử lý
+            doc.add_paragraph(f"=== File: {file.filename} ===")
+            
+            if mode == 'translate':
+                # Dịch văn bản
+                target_langs = request.form.getlist('target_langs[]')
+                for lang in target_langs:
+                    prompt = f"""
+                        Hãy dịch đoạn văn bản sau sang {getLangName(lang)}.
+                        Thể loại: {', '.join(genres) if genres else 'Không xác định'}
+                        Phong cách: {', '.join(styles) if styles else 'Không xác định'}
+                        
+                        Văn bản cần dịch:
+                        {response.text}
+                    """
+                    
+                    response = client.models.generate_content(
+                        model="gemini-2.0-flash",
+                        contents=prompt,
+                        config={
+                            "temperature": 0.2,
+                            "max_output_tokens": 2048
+                        }
+                    )
+                    
+                    if response.text:
+                        doc.add_paragraph(f"=== {getLangName(lang)} ===")
+                        doc.add_paragraph(response.text)
+                        doc.add_paragraph('---')
+            else:
+                doc.add_paragraph(response.text)
+                doc.add_paragraph('---')
+                
+            # Thêm delay giữa các lần xử lý để tránh rate limit
+            time.sleep(1)
+            
+        return True
+    except Exception as e:
+        print(f"Lỗi khi xử lý file ảnh {file.filename}: {str(e)}")
+        return False
 
 # Hàm chuyển đổi mã ngôn ngữ thành tên
 def getLangName(code):
@@ -616,61 +603,6 @@ def execute_merge_ocr():
     except Exception as e:
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
-        return handle_error(e)
-
-@app.route('/execute/download_images', methods=['POST'])
-def download_selected_images():
-    try:
-        # Lấy danh sách URL ảnh đã chọn
-        image_urls = request.json.get('image_urls', [])
-        if not image_urls:
-            return jsonify({'error': 'Không có ảnh nào được chọn'})
-        
-        # Tạo thư mục tạm thời
-        temp_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'temp_download')
-        if os.path.exists(temp_dir):
-            shutil.rmtree(temp_dir)
-        os.makedirs(temp_dir)
-        
-        # Tải các ảnh đã chọn
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        
-        downloaded_files = []
-        for i, url in enumerate(image_urls, 1):
-            try:
-                response = requests.get(url, headers=headers)
-                if response.status_code == 200:
-                    img_name = f'image_{i}.jpg'
-                    img_path = os.path.join(temp_dir, img_name)
-                    
-                    with open(img_path, 'wb') as f:
-                        f.write(response.content)
-                    downloaded_files.append(img_name)
-            except Exception as e:
-                print(f"Lỗi khi tải ảnh {url}: {str(e)}")
-                continue
-        
-        if not downloaded_files:
-            return jsonify({'error': 'Không thể tải xuống ảnh nào'})
-        
-        # Tạo file zip chứa kết quả
-        zip_path = os.path.join(app.config['UPLOAD_FOLDER'], 'downloaded_images.zip')
-        with zipfile.ZipFile(zip_path, 'w') as zipf:
-            for file in downloaded_files:
-                file_path = os.path.join(temp_dir, file)
-                zipf.write(file_path, file)
-        
-        # Xóa thư mục tạm
-        shutil.rmtree(temp_dir)
-        
-        return jsonify({
-            'message': f'Đã tải xuống {len(downloaded_files)} ảnh!',
-            'output_files': ['downloaded_images.zip']
-        })
-        
-    except Exception as e:
         return handle_error(e)
 
 @app.route('/download/<filename>')
@@ -802,6 +734,10 @@ def test_api_key():
         
     except Exception as e:
         return jsonify({'error': str(e)})
+
+@app.route('/execute/download_images', methods=['POST'])
+def execute_download():
+    return download_selected_images()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000, debug=True)

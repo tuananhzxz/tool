@@ -52,7 +52,7 @@ def merge_word_documents(input_folder, output_file):
                     if paragraph.text.strip():  # Chỉ sao chép đoạn không trống
                         merged_document.add_paragraph(paragraph.text)
 
-                processed_files += 1
+                processed_files += 16
 
             except Exception as e:
                 print(f"Lỗi khi xử lý tập tin '{file_name}': {str(e)}")
