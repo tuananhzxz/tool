@@ -29,7 +29,7 @@ load_dotenv()
 
 app = Flask(__name__, static_folder='public')
 CORS(app)
-app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['UPLOAD_FOLDER'] = '/tmp/uploads'
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max-limit
 
 # Đảm bảo thư mục uploads tồn tại
