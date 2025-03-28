@@ -429,7 +429,7 @@ def process_word_file(file, doc, mode, genres, styles, api_key):
                     client = genai.Client(api_key=api_key)
                     
                     response = client.models.generate_content(
-                        model="gemini-2.5-pro-exp-03-25",
+                        model="gemini-2.0-flash",
                         contents=prompt,
                         config={"temperature": 0.2}
                     )
@@ -494,7 +494,7 @@ def process_image_file(file, doc, mode, genres, styles, api_key):
         
         # Gửi yêu cầu đến Gemini API với cấu hình tối ưu
         response = client.models.generate_content(
-            model="gemini-2.5-pro-exp-03-25",
+            model="gemini-2.0-flash",
             contents=[
                 {"text": prompt},
                 {"inline_data": {"mime_type": "image/png", "data": img_byte_arr}}
@@ -526,7 +526,7 @@ def process_image_file(file, doc, mode, genres, styles, api_key):
                     """
                     
                     response = client.models.generate_content(
-                        model="gemini-2.5-pro-exp-03-25",
+                        model="gemini-2.0-flash",
                         contents=prompt,
                         config={
                             "temperature": 0.2,
@@ -746,7 +746,7 @@ def test_api_key():
         
         # Tạo một tin nhắn đơn giản để kiểm tra API key
         response = client.models.generate_content(
-            model="gemini-2.5-pro-exp-03-25", contents="Explain how AI works in a few words"
+            model="gemini-2.0-flash", contents="Explain how AI works in a few words"
         )
         
         return jsonify({'success': True, 'message': 'API key hợp lệ'})
