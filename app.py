@@ -3,6 +3,7 @@ from flask import Flask, render_template, request, jsonify, send_file
 import os
 from werkzeug.utils import secure_filename
 from PIL import Image, ImageEnhance
+import shutil
 from changeImage import convert_images
 from cutmergeimage import ImageProcessor
 from mergeWord import merge_word_documents
@@ -28,7 +29,13 @@ load_dotenv()
 
 app = Flask(__name__, static_folder='public')
 CORS(app)
+app.config['UPLOAD_FOLDER'] = '/tmp/uploads'
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max-limit
+
+# Đảm bảo thư mục uploads tồn tại
+if not os.path.exists(app.config['UPLOAD_FOLDER']):
+    os.makedirs(app.config['UPLOAD_FOLDER'])
+
 
 # Hàm xử lý lỗi chung
 def handle_error(e):
@@ -82,51 +89,60 @@ def execute_change_image():
         
         if not files or files[0].filename == '':
             return jsonify({'error': 'Không có file được chọn'})
+            
+        # Tạo thư mục tạm thời
+        temp_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'temp_convert')
+        output_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'output_convert')
         
-        # Xử lý và lưu file vào memory
-        converted_files = []
-        
+        for dir_path in [temp_dir, output_dir]:
+            if os.path.exists(dir_path):
+                shutil.rmtree(dir_path)
+            os.makedirs(dir_path)
+            
+        # Lưu và xử lý từng file
         for file in files:
             if file.filename:
-                with Image.open(file) as img:
-                    # Lưu vào BytesIO để tránh lưu file vào ổ đĩa
-                    output_buffer = io.BytesIO()
-                    
+                filename = secure_filename(file.filename)
+                file_path = os.path.join(temp_dir, filename)
+                file.save(file_path)
+                
+                # Xác định định dạng nguồn và chuyển đổi
+                with Image.open(file_path) as img:
+                    source_format = img.format
+                    # Chuyển đổi và lưu với định dạng mới
+                    output_path = os.path.join(output_dir, os.path.splitext(filename)[0] + '.' + target_format.lower())
                     if target_format.upper() == 'WEBP':
-                        img.save(output_buffer, 'WEBP', quality=90)
+                        img.save(output_path, 'WEBP', quality=90)
                     elif target_format.upper() == 'JPEG':
                         if img.mode in ('RGBA', 'LA'):
                             background = Image.new('RGB', img.size, (255, 255, 255))
                             background.paste(img, mask=img.split()[-1])
-                            background.save(output_buffer, 'JPEG', quality=95)
+                            background.save(output_path, 'JPEG', quality=95)
                         else:
-                            img.save(output_buffer, 'JPEG', quality=95)
+                            img.save(output_path, 'JPEG', quality=95)
                     else:  # PNG
-                        img.save(output_buffer, 'PNG')
-                    
-                    output_buffer.seek(0)
-                    converted_files.append((f"{os.path.splitext(file.filename)[0]}.{target_format.lower()}", output_buffer))
+                        img.save(output_path, 'PNG')
         
-        # Tạo file zip trong memory
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, 'w') as zipf:
-            for filename, file_buffer in converted_files:
-                zipf.writestr(filename, file_buffer.getvalue())
+        # Tạo file zip
+        zip_path = os.path.join(app.config['UPLOAD_FOLDER'], 'converted_images.zip')
+        with zipfile.ZipFile(zip_path, 'w') as zipf:
+            for root, dirs, files in os.walk(output_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, output_dir)
+                    zipf.write(file_path, arcname)
         
-        zip_buffer.seek(0)
+        # Xóa thư mục tạm
+        shutil.rmtree(temp_dir)
+        shutil.rmtree(output_dir)
         
-        return send_file(
-            zip_buffer, 
-            mimetype='application/zip', 
-            as_attachment=True, 
-            download_name='converted_images.zip'
-        )
+        return jsonify({
+            'message': 'Chuyển đổi thành công!',
+            'output_files': ['converted_images.zip']
+        })
         
     except Exception as e:
         return handle_error(e)
-
-# Giữ nguyên các route khác như trước, chỉ thay đổi phần lưu file 
-# và sử dụng in-memory processing khi có thể
 
 @app.route('/execute/cutmergeimage', methods=['POST'])
 def execute_cut_merge_image():
@@ -135,69 +151,84 @@ def execute_cut_merge_image():
     
     files = request.files.getlist('files')
     action = request.form.get('action')
-    min_height = int(request.form.get('min_height', 2500))
-    images_per_group = int(request.form.get('parts', 2))
+    min_height = int(request.form.get('min_height', 2500))  # Chiều cao tối thiểu mặc định 2500px
+    images_per_group = int(request.form.get('parts', 2))  # Số ảnh mỗi nhóm khi ghép
     width = request.form.get('width')
     height = request.form.get('height')
     
     if not files or files[0].filename == '':
         return jsonify({'error': 'Không có file được chọn'})
+        
+    # Tạo thư mục tạm thời
+    temp_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'temp_process')
+    output_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'output_process')
     
+    for dir_path in [temp_dir, output_dir]:
+        if os.path.exists(dir_path):
+            shutil.rmtree(dir_path)
+        os.makedirs(dir_path)
+        
     try:
-        # Lưu file vào memory
-        saved_images = []
+        # Lưu các file
+        saved_files = []
         for file in files:
             if file.filename:
-                img = Image.open(file)
+                filename = secure_filename(file.filename)
+                file_path = os.path.join(temp_dir, filename)
+                file.save(file_path)
+                saved_files.append(file_path)
                 
                 # Resize ảnh nếu có yêu cầu
                 if width or height:
-                    new_width = int(width) if width else img.width
-                    new_height = int(height) if height else img.height
-                    img = img.resize((new_width, new_height))
-                
-                # Lưu ảnh vào memory buffer
-                buffer = io.BytesIO()
-                img.save(buffer, format=img.format)
-                buffer.seek(0)
-                saved_images.append(buffer)
+                    with Image.open(file_path) as img:
+                        new_width = int(width) if width else img.width
+                        new_height = int(height) if height else img.height
+                        resized = img.resize((new_width, new_height))
+                        resized.save(file_path)
         
-        # Xử lý ảnh trong memory
-        processor = ImageProcessor(saved_images)
+        processor = ImageProcessor(temp_dir)
         
         try:
             if action == 'split':
                 result_files = processor.split_images(min_height)
             else:  # merge
-                if len(saved_images) < images_per_group:
-                    return jsonify({'error': f'Số lượng ảnh ({len(saved_images)}) phải lớn hơn hoặc bằng số ảnh mỗi nhóm ({images_per_group})'})
+                if len(saved_files) < images_per_group:
+                    return jsonify({'error': f'Số lượng ảnh ({len(saved_files)}) phải lớn hơn hoặc bằng số ảnh mỗi nhóm ({images_per_group})'})
                 result_files = processor.combine_images(images_per_group)
             
             if not result_files:
                 return jsonify({'error': 'Không thể xử lý ảnh. Vui lòng kiểm tra lại các tham số.'})
             
-            # Tạo zip file trong memory
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, 'w') as zipf:
-                for i, file_buffer in enumerate(result_files, 1):
-                    zipf.writestr(f"{i}.png", file_buffer.getvalue())
+            # Copy các file kết quả vào thư mục output với tên mới
+            for i, file_path in enumerate(result_files, 1):
+                file_ext = os.path.splitext(file_path)[1]
+                new_name = f"{i}{file_ext}"
+                new_path = os.path.join(output_dir, new_name)
+                shutil.copy2(file_path, new_path)
             
-            zip_buffer.seek(0)
+            # Tạo file zip chứa kết quả
+            zip_path = os.path.join(app.config['UPLOAD_FOLDER'], 'processed_images.zip')
+            with zipfile.ZipFile(zip_path, 'w') as zipf:
+                for root, dirs, files in os.walk(output_dir):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        arcname = os.path.relpath(file_path, output_dir)
+                        zipf.write(file_path, arcname)
             
-            return send_file(
-                zip_buffer, 
-                mimetype='application/zip', 
-                as_attachment=True, 
-                download_name='processed_images.zip'
-            )
+            # Xóa thư mục tạm
+            shutil.rmtree(temp_dir)
+            shutil.rmtree(output_dir)
+            
+            return jsonify({
+                'message': 'Xử lý thành công!',
+                'output_files': ['processed_images.zip']
+            })
             
         except Exception as e:
             return jsonify({'error': str(e)})
             
     except Exception as e:
         return handle_error(e)
-
-# Chỉnh sửa các route khác để sử dụng memory processing
 
 @app.route('/execute/mergeWord', methods=['POST'])
 def execute_merge_word():
@@ -208,21 +239,39 @@ def execute_merge_word():
     if not files or files[0].filename == '':
         return jsonify({'error': 'Không có file được chọn'})
     
+    # Tạo thư mục tạm thời
+    temp_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'temp_word')
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir)
+    os.makedirs(temp_dir)
+    
     try:
-        # Lưu file Word vào memory
-        saved_files = [file.read() for file in files]
+        # Lưu các file
+        for file in files:
+            if file.filename:
+                filename = secure_filename(file.filename)
+                file_path = os.path.join(temp_dir, filename)
+                file.save(file_path)
         
-        # Gộp file trong memory
-        output_buffer = io.BytesIO()
-        Document().save(output_buffer)
-        output_buffer.seek(0)
+        # Gộp file
+        output_path = os.path.join(temp_dir, 'merged_document.docx')
+        success = merge_word_documents(temp_dir, output_path)
         
-        return send_file(
-            output_buffer, 
-            mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document', 
-            as_attachment=True, 
-            download_name='merged_document.docx'
-        )
+        if success:
+            # Tạo file zip chứa kết quả
+            zip_path = os.path.join(app.config['UPLOAD_FOLDER'], 'merged_documents.zip')
+            with zipfile.ZipFile(zip_path, 'w') as zipf:
+                zipf.write(output_path, 'merged_document.docx')
+            
+            # Xóa thư mục tạm
+            shutil.rmtree(temp_dir)
+            
+            return jsonify({
+                'message': 'Gộp file thành công!',
+                'output_files': ['merged_documents.zip']
+            })
+        else:
+            return jsonify({'error': 'Không thể gộp các file'})
         
     except Exception as e:
         return handle_error(e)
