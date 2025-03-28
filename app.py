@@ -15,7 +15,6 @@ import zipfile
 import re
 from flask_cors import CORS
 from ocr_processor import process_folder
-from speechbubble import SpeechBubbleProcessor
 from add_logo import LogoProcessor
 from docx import Document
 from google import genai
@@ -72,7 +71,6 @@ def function_page(function_name):
         'renameImage': 'functions/renameimage.html',
         'ocr': 'functions/ocr.html',
         'translate': 'functions/translate.html',
-        'remove_speech_bubbles': 'functions/speechbubble.html',
         'addlogo': 'functions/addlogo.html'  # Add this line
     }
     
@@ -631,9 +629,6 @@ def internal_error(e):
 @app.errorhandler(404)
 def not_found(e):
     return jsonify({'error': 'Không tìm thấy trang'}), 404
-
-@app.route('/remove_speech_bubbles', methods=['GET', 'POST'])
-def process_speech_bubbles():
     if request.method == 'GET':
         return render_template('functions/speechbubble.html')
     
