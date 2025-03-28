@@ -1,5 +1,5 @@
 import time
-from flask import Flask, render_template, request, jsonify, send_file, url_for
+from flask import Flask, render_template, request, jsonify, send_file
 import os
 from werkzeug.utils import secure_filename
 from PIL import Image, ImageEnhance
@@ -15,7 +15,7 @@ import zipfile
 import re
 from flask_cors import CORS
 from ocr_processor import process_folder
-from add_logo import LogoProcessor
+from speechbubble import SpeechBubbleProcessor
 from docx import Document
 from google import genai
 from google.genai import types
@@ -56,8 +56,7 @@ def index():
         'dowloaf': 'Tải ảnh từ web',
         'mergeWord': 'Gộp file Word',
         'renameImage': 'Đổi tên ảnh',
-        'ocr': 'Nhận dạng chữ trong ảnh (OCR)',
-        'addlogo': 'Thêm logo vào ảnh'
+        'ocr': 'Nhận dạng chữ trong ảnh (OCR)'
     }
     return render_template('index.html', functions=functions)
 
@@ -71,7 +70,7 @@ def function_page(function_name):
         'renameImage': 'functions/renameimage.html',
         'ocr': 'functions/ocr.html',
         'translate': 'functions/translate.html',
-        'addlogo': 'functions/addlogo.html'  # Add this line
+        'remove_speech_bubbles': 'functions/speechbubble.html'
     }
     
     if function_name not in templates:
@@ -99,9 +98,6 @@ def execute_change_image():
             if os.path.exists(dir_path):
                 shutil.rmtree(dir_path)
             os.makedirs(dir_path)
-        
-        # Theo dõi các chuyển đổi đã thực hiện
-        conversions = []
             
         # Lưu và xử lý từng file
         for file in files:
@@ -112,13 +108,9 @@ def execute_change_image():
                 
                 # Xác định định dạng nguồn và chuyển đổi
                 with Image.open(file_path) as img:
-                    source_format = img.format.lower() if img.format else os.path.splitext(filename)[1][1:].lower()
+                    source_format = img.format
                     # Chuyển đổi và lưu với định dạng mới
                     output_path = os.path.join(output_dir, os.path.splitext(filename)[0] + '.' + target_format.lower())
-                    
-                    # Thêm thông tin chuyển đổi
-                    conversions.append(f"{source_format.upper()} → {target_format.upper()}")
-                    
                     if target_format.upper() == 'WEBP':
                         img.save(output_path, 'WEBP', quality=90)
                     elif target_format.upper() == 'JPEG':
@@ -144,14 +136,9 @@ def execute_change_image():
         shutil.rmtree(temp_dir)
         shutil.rmtree(output_dir)
         
-        # Tạo thông báo chi tiết về các chuyển đổi
-        unique_conversions = list(set(conversions))
-        conversion_message = ", ".join(unique_conversions)
-        
         return jsonify({
-            'message': f'Chuyển đổi thành công! ({conversion_message})',
-            'output_files': ['converted_images.zip'],
-            'conversions': unique_conversions
+            'message': 'Chuyển đổi thành công!',
+            'output_files': ['converted_images.zip']
         })
         
     except Exception as e:
@@ -349,6 +336,16 @@ def execute_ocr():
         
         # Tạo một tài liệu Word mới
         doc = Document()
+        doc.add_heading('Cám ơn đã sử dụng tôi iu bạn có thể mua ủng hộ ly cafe để web phát triển hơn...', 0)
+        
+        # Thêm thông tin về thể loại và phong cách
+        if genres or styles:
+            doc.add_paragraph('=== Thông tin truyện ===')
+            if genres:
+                doc.add_paragraph('Thể loại: ' + ', '.join(genres))
+            if styles:
+                doc.add_paragraph('Phong cách: ' + ', '.join(styles))
+            doc.add_paragraph('---')
         
         extracted_texts = []
         processed_files = []
@@ -429,7 +426,7 @@ def process_word_file(file, doc, mode, genres, styles, api_key):
                     client = genai.Client(api_key=api_key)
                     
                     response = client.models.generate_content(
-                        model="gemini-2.5-pro-exp-03-25",
+                        model="gemini-2.0-flash",
                         contents=prompt,
                         config={"temperature": 0.2}
                     )
@@ -494,7 +491,7 @@ def process_image_file(file, doc, mode, genres, styles, api_key):
         
         # Gửi yêu cầu đến Gemini API với cấu hình tối ưu
         response = client.models.generate_content(
-            model="gemini-2.5-pro-exp-03-25",
+            model="gemini-2.0-flash",
             contents=[
                 {"text": prompt},
                 {"inline_data": {"mime_type": "image/png", "data": img_byte_arr}}
@@ -526,7 +523,7 @@ def process_image_file(file, doc, mode, genres, styles, api_key):
                     """
                     
                     response = client.models.generate_content(
-                        model="gemini-2.5-pro-exp-03-25",
+                        model="gemini-2.0-flash",
                         contents=prompt,
                         config={
                             "temperature": 0.2,
@@ -629,6 +626,9 @@ def internal_error(e):
 @app.errorhandler(404)
 def not_found(e):
     return jsonify({'error': 'Không tìm thấy trang'}), 404
+
+@app.route('/remove_speech_bubbles', methods=['GET', 'POST'])
+def process_speech_bubbles():
     if request.method == 'GET':
         return render_template('functions/speechbubble.html')
     
@@ -641,62 +641,43 @@ def not_found(e):
         if not files or files[0].filename == '':
             return jsonify({'error': 'Không có file nào được chọn'}), 400
             
-        # Lấy API key từ form
-        api_key = request.form.get('api_key')
-            
-        # Tạo thư mục tạm thời và output
-        temp_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'temp_speech')
-        output_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'output_speech')
+        # Lấy API key từ form hoặc sử dụng API key mặc định
+        api_key = request.form.get('api_key', app.config['GEMINI_API_KEY'])
         
-        for dir_path in [temp_dir, output_dir]:
-            if os.path.exists(dir_path):
-                shutil.rmtree(dir_path)
-            os.makedirs(dir_path)
+        # Cấu hình API key mới nếu có
+        if api_key != app.config['GEMINI_API_KEY']:
+            genai.Client(api_key=api_key)
             
-        try:
-            # Lưu các file
-            for file in files:
-                if file.filename:
-                    filename = secure_filename(file.filename)
-                    file_path = os.path.join(temp_dir, filename)
-                    file.save(file_path)
+        # Tạo thư mục tạm thời
+        temp_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'temp')
+        if not os.path.exists(temp_dir):
+            os.makedirs(temp_dir)
+            
+        # Xóa các file cũ trong thư mục tạm
+        for file in os.listdir(temp_dir):
+            os.remove(os.path.join(temp_dir, file))
+            
+        # Lưu các file upload
+        for file in files:
+            if file and allowed_file(file.filename):
+                file.save(os.path.join(temp_dir, file.filename))
+                
+        # Xử lý ảnh
+        processor = SpeechBubbleProcessor(api_key)
+        output_dir = processor.process_folder(temp_dir)
+        
+        # Tạo file zip
+        zip_path = os.path.join(app.config['UPLOAD_FOLDER'], 'processed_images.zip')
+        with zipfile.ZipFile(zip_path, 'w') as zipf:
+            for root, dirs, files in os.walk(output_dir):
+                for file in files:
+                    zipf.write(os.path.join(root, file), file)
                     
-            # Xử lý ảnh
-            processor = SpeechBubbleProcessor(api_key)
-            processed_dir = processor.process_folder(temp_dir)
-            
-            # Copy các file kết quả vào thư mục output
-            for file in os.listdir(processed_dir):
-                if file.endswith(('.png', '.jpg', '.jpeg', '.webp')):
-                    src_path = os.path.join(processed_dir, file)
-                    dst_path = os.path.join(output_dir, file)
-                    shutil.copy2(src_path, dst_path)
-            
-            # Tạo file zip chứa kết quả
-            zip_path = os.path.join(app.config['UPLOAD_FOLDER'], 'processed_images.zip')
-            with zipfile.ZipFile(zip_path, 'w') as zipf:
-                for root, dirs, files in os.walk(output_dir):
-                    for file in files:
-                        file_path = os.path.join(root, file)
-                        arcname = os.path.relpath(file_path, output_dir)
-                        zipf.write(file_path, arcname)
-            
-            # Xóa thư mục tạm
-            shutil.rmtree(temp_dir)
-            shutil.rmtree(output_dir)
-                    
-            return jsonify({
-                'success': True,
-                'message': 'Xử lý ảnh thành công',
-                'download_url': url_for('download_file', filename='processed_images.zip', _external=True)
-            })
-            
-        except Exception as e:
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
-            if os.path.exists(output_dir):
-                shutil.rmtree(output_dir)
-            return jsonify({'error': str(e)}), 500
+        return jsonify({
+            'success': True,
+            'message': 'Xử lý ảnh thành công',
+            'download_url': url_for('download_file', filename='processed_images.zip', _external=True)
+        })
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -746,7 +727,7 @@ def test_api_key():
         
         # Tạo một tin nhắn đơn giản để kiểm tra API key
         response = client.models.generate_content(
-            model="gemini-2.5-pro-exp-03-25", contents="Explain how AI works in a few words"
+            model="gemini-2.0-flash", contents="Explain how AI works in a few words"
         )
         
         return jsonify({'success': True, 'message': 'API key hợp lệ'})
@@ -757,77 +738,6 @@ def test_api_key():
 @app.route('/execute/download_images', methods=['POST'])
 def execute_download():
     return download_selected_images()
-
-@app.route('/add_logo', methods=['GET', 'POST'])
-def add_logo():
-    if request.method == 'GET':
-        return render_template('functions/addlogo.html')
-    
-    try:
-        # Kiểm tra file upload
-        if 'files' not in request.files or 'logo' not in request.files:
-            return jsonify({'error': 'Vui lòng chọn cả logo và ảnh cần xử lý'}), 400
-            
-        files = request.files.getlist('files')
-        logo = request.files['logo']
-        
-        if not files or not logo or files[0].filename == '' or logo.filename == '':
-            return jsonify({'error': 'Vui lòng chọn file'}), 400
-            
-        # Lấy các tham số
-        position = request.form.get('position', 'top_left')
-        scale = float(request.form.get('scale', 10)) / 100  # Chuyển đổi từ phần trăm sang thập phân
-        
-        # Tạo thư mục tạm thời
-        temp_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'temp_logo')
-        if os.path.exists(temp_dir):
-            shutil.rmtree(temp_dir)
-        os.makedirs(temp_dir)
-            
-        try:
-            # Lưu logo
-            logo_path = os.path.join(temp_dir, 'logo.png')
-            logo.save(logo_path)
-            
-            # Lưu các file ảnh
-            for file in files:
-                if file.filename:
-                    filename = secure_filename(file.filename)
-                    file_path = os.path.join(temp_dir, filename)
-                    file.save(file_path)
-                    
-            # Xử lý ảnh
-            processor = LogoProcessor()
-            output_path = processor.process_folder(temp_dir, logo_path, position, scale)
-            
-            if output_path:
-                # Tạo file zip chứa kết quả
-                zip_path = os.path.join(app.config['UPLOAD_FOLDER'], 'processed_images.zip')
-                with zipfile.ZipFile(zip_path, 'w') as zipf:
-                    zipf.write(output_path, os.path.basename(output_path))
-                
-                # Xóa thư mục tạm
-                shutil.rmtree(temp_dir)
-                        
-                return jsonify({
-                    'success': True,
-                    'message': 'Thêm logo thành công',
-                    'download_url': url_for('download_file', filename='processed_images.zip', _external=True)
-                })
-            else:
-                return jsonify({'error': 'Không thể xử lý ảnh'}), 500
-            
-        except Exception as e:
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
-            return jsonify({'error': str(e)}), 500
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/addlogo')
-def add_logo_page():
-    return render_template('functions/addlogo.html')
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000, debug=True)
