@@ -350,15 +350,8 @@ def execute_ocr():
         # Tạo một tài liệu Word mới
         doc = Document()
         
-        extracted_texts = []
         processed_files = []
         failed_files = []
-        
-        # Tạo thư mục tạm thời
-        temp_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'temp_ocr')
-        if os.path.exists(temp_dir):
-            shutil.rmtree(temp_dir)
-        os.makedirs(temp_dir)
         
         try:
             # Xử lý từng file một
@@ -379,13 +372,8 @@ def execute_ocr():
                             failed_files.append(file.filename)
                             
                     elif file_ext in ['.jpg', '.jpeg', '.png', '.webp']:
-                        # Lưu file ảnh vào thư mục tạm
-                        filename = secure_filename(file.filename)
-                        file_path = os.path.join(temp_dir, filename)
-                        file.save(file_path)
-                        
-                        # Xử lý file ảnh
-                        success = process_image_file(file_path, doc, mode, genres, styles, api_key)
+                        # Xử lý file ảnh trực tiếp từ bộ nhớ
+                        success = process_image_file_memory(file, doc, mode, genres, styles, api_key)
                         if success:
                             processed_files.append(file.filename)
                         else:
@@ -402,30 +390,20 @@ def execute_ocr():
             if not processed_files:
                 return jsonify({'error': 'Không thể xử lý bất kỳ file nào'})
             
-            # Lưu tài liệu
+            # Lưu tài liệu vào bộ nhớ
             output_filename = f'VBCĐ_{int(time.time())}.docx'
-            output_path = os.path.join(temp_dir, output_filename)
-            doc.save(output_path)
+            output_buffer = io.BytesIO()
+            doc.save(output_buffer)
+            output_buffer.seek(0)
             
-            # Tạo file zip chứa kết quả
-            zip_path = os.path.join(app.config['UPLOAD_FOLDER'], 'processed_ocr.zip')
-            with zipfile.ZipFile(zip_path, 'w') as zipf:
-                zipf.write(output_path, output_filename)
-            
-            # Xóa thư mục tạm
-            shutil.rmtree(temp_dir)
-            
-            return jsonify({
-                'success': True,
-                'word_files': {'all': ['processed_ocr.zip']},
-                'processed_files': processed_files,
-                'failed_files': failed_files,
-                'extracted_texts': extracted_texts
-            })
+            return send_file(
+                output_buffer,
+                mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                as_attachment=True,
+                download_name=output_filename
+            )
             
         except Exception as e:
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
             return jsonify({'error': str(e)})
         
     except Exception as e:
@@ -471,106 +449,108 @@ def process_word_file(file, doc, mode, genres, styles, api_key):
         print(f"Lỗi khi xử lý file Word {file.filename}: {str(e)}")
         return False
 
-def process_image_file(file_path, doc, mode, genres, styles, api_key):
+def process_image_file_memory(file, doc, mode, genres, styles, api_key):
     try:
-        # Đọc và xử lý ảnh
-        with Image.open(file_path) as img:
-            # Kiểm tra kích thước ảnh
-            max_size = (1920, 1080)
-            if img.size[0] > max_size[0] or img.size[1] > max_size[1]:
-                img.thumbnail(max_size, Image.Resampling.LANCZOS)
+        # Đọc ảnh từ bộ nhớ
+        image_bytes = file.read()
+        img = Image.open(io.BytesIO(image_bytes))
+        
+        # Kiểm tra kích thước ảnh
+        max_size = (1920, 1080)
+        if img.size[0] > max_size[0] or img.size[1] > max_size[1]:
+            img.thumbnail(max_size, Image.Resampling.LANCZOS)
+        
+        # Chuyển sang grayscale và tăng độ tương phản
+        img = img.convert('L')
+        enhancer = ImageEnhance.Contrast(img)
+        img = enhancer.enhance(1.5)
+        
+        # Chuyển ảnh đã xử lý thành bytes
+        img_byte_arr = io.BytesIO()
+        img.save(img_byte_arr, format='PNG')
+        img_byte_arr = img_byte_arr.getvalue()
+        
+        # Tạo prompt cho việc nhận dạng văn bản
+        prompt = f"""
+            NHIỆM VỤ: Nhận dạng và trích xuất văn bản từ ảnh với độ chính xác cao nhất.
             
-            # Chuyển sang grayscale và tăng độ tương phản
-            img = img.convert('L')
-            enhancer = ImageEnhance.Contrast(img)
-            img = enhancer.enhance(1.5)
+            YÊU CẦU CHẤT LƯỢNG:
+            1. Nhận dạng chính xác 100% nội dung văn bản, kể cả chữ nhỏ
+            2. Phân biệt rõ các đoạn văn bản khác nhau, các bóng thoại khác nhau
+            3. Giữ nguyên vị trí và thứ tự của các bóng thoại
+            4. Không bỏ sót bất kỳ ký tự nào
             
-            # Chuyển ảnh đã xử lý thành bytes
-            img_byte_arr = io.BytesIO()
-            img.save(img_byte_arr, format='PNG')
-            img_byte_arr = img_byte_arr.getvalue()
+            QUY TẮC XỬ LÝ:
+            1. Loại bỏ các yếu tố không phải văn bản 
+            2. QUAN TRỌNG: Xử lý mỗi bóng thoại (speech bubble) như MỘT CÂU HOÀN CHỈNH TRÊN MỘT DÒNG DUY NHẤT
+            3. Mỗi bóng thoại riêng biệt sẽ được xuất ra thành một dòng văn bản riêng biệt
+            4. Giữ nguyên các dấu câu và định dạng đặc biệt
             
-            # Tạo prompt cho việc nhận dạng văn bản
-            prompt = f"""
-                NHIỆM VỤ: Nhận dạng và trích xuất văn bản từ ảnh với độ chính xác cao nhất.
-                
-                YÊU CẦU CHẤT LƯỢNG:
-                1. Nhận dạng chính xác 100% nội dung văn bản, kể cả chữ nhỏ
-                2. Phân biệt rõ các đoạn văn bản khác nhau, các bóng thoại khác nhau
-                3. Giữ nguyên vị trí và thứ tự của các bóng thoại
-                4. Không bỏ sót bất kỳ ký tự nào
-                
-                QUY TẮC XỬ LÝ:
-                1. Loại bỏ các yếu tố không phải văn bản 
-                2. QUAN TRỌNG: Xử lý mỗi bóng thoại (speech bubble) như MỘT CÂU HOÀN CHỈNH TRÊN MỘT DÒNG DUY NHẤT
-                3. Mỗi bóng thoại riêng biệt sẽ được xuất ra thành một dòng văn bản riêng biệt
-                4. Giữ nguyên các dấu câu và định dạng đặc biệt
-                
-                ĐỊNH DẠNG ĐẦU RA:
-                - Mỗi bóng thoại trên một dòng riêng
-                - Giữ nguyên các dấu câu và định dạng
-                - Không thêm bất kỳ chú thích hay giải thích nào
-                - Không tách văn bản trong một bóng thoại thành nhiều dòng
-            """
+            ĐỊNH DẠNG ĐẦU RA:
+            - Mỗi bóng thoại trên một dòng riêng
+            - Giữ nguyên các dấu câu và định dạng
+            - Không thêm bất kỳ chú thích hay giải thích nào
+            - Không tách văn bản trong một bóng thoại thành nhiều dòng
+        """
+        
+        client = genai.Client(api_key=api_key)
+        
+        # Gửi yêu cầu đến Gemini API với cấu hình tối ưu
+        response = client.models.generate_content(
+            model="gemini-2.5-pro-exp-03-25",
+            contents=[
+                {"text": prompt},
+                {"inline_data": {"mime_type": "image/png", "data": img_byte_arr}}
+            ],
+            config={
+                "temperature": 0.1,  # Giảm temperature để tăng độ chính xác
+                "max_output_tokens": 2048,  # Tăng max tokens để xử lý văn bản dài
+                "top_p": 0.8,
+                "top_k": 40,
+                "candidate_count": 1
+            }
+        )
+        
+        if response.text:
+            # Thêm thông tin về file đang xử lý
+            doc.add_paragraph(f"=== File: {file.filename} ===")
             
-            client = genai.Client(api_key=api_key)
-            
-            # Gửi yêu cầu đến Gemini API với cấu hình tối ưu
-            response = client.models.generate_content(
-                model="gemini-2.5-pro-exp-03-25",
-                contents=[
-                    {"text": prompt},
-                    {"inline_data": {"mime_type": "image/png", "data": img_byte_arr}}
-                ],
-                config={
-                    "temperature": 0.1,  # Giảm temperature để tăng độ chính xác
-                    "max_output_tokens": 2048,  # Tăng max tokens để xử lý văn bản dài
-                    "top_p": 0.8,
-                    "top_k": 40,
-                    "candidate_count": 1
-                }
-            )
-            
-            if response.text:
-                # Thêm thông tin về file đang xử lý
-                doc.add_paragraph(f"=== File: {os.path.basename(file_path)} ===")
-                
-                if mode == 'translate':
-                    # Dịch văn bản
-                    target_langs = request.form.getlist('target_langs[]')
-                    for lang in target_langs:
-                        prompt = f"""
-                            Hãy dịch đoạn văn bản sau sang {getLangName(lang)}.
-                            Thể loại: {', '.join(genres) if genres else 'Không xác định'}
-                            Phong cách: {', '.join(styles) if styles else 'Không xác định'}
-                            
-                            Văn bản cần dịch:
-                            {response.text}
-                        """
+            if mode == 'translate':
+                # Dịch văn bản
+                target_langs = request.form.getlist('target_langs[]')
+                for lang in target_langs:
+                    prompt = f"""
+                        Hãy dịch đoạn văn bản sau sang {getLangName(lang)}.
+                        Thể loại: {', '.join(genres) if genres else 'Không xác định'}
+                        Phong cách: {', '.join(styles) if styles else 'Không xác định'}
                         
-                        response = client.models.generate_content(
-                            model="gemini-2.5-pro-exp-03-25",
-                            contents=prompt,
-                            config={
-                                "temperature": 0.2,
-                                "max_output_tokens": 2048
-                            }
-                        )
-                        
-                        if response.text:
-                            doc.add_paragraph(f"=== {getLangName(lang)} ===")
-                            doc.add_paragraph(response.text)
-                            doc.add_paragraph('---')
-                else:
-                    doc.add_paragraph(response.text)
-                    doc.add_paragraph('---')
+                        Văn bản cần dịch:
+                        {response.text}
+                    """
                     
-                # Thêm delay giữa các lần xử lý để tránh rate limit
-                time.sleep(1)
+                    response = client.models.generate_content(
+                        model="gemini-2.5-pro-exp-03-25",
+                        contents=prompt,
+                        config={
+                            "temperature": 0.2,
+                            "max_output_tokens": 2048
+                        }
+                    )
+                    
+                    if response.text:
+                        doc.add_paragraph(f"=== {getLangName(lang)} ===")
+                        doc.add_paragraph(response.text)
+                        doc.add_paragraph('---')
+            else:
+                doc.add_paragraph(response.text)
+                doc.add_paragraph('---')
                 
-            return True
+            # Thêm delay giữa các lần xử lý để tránh rate limit
+            time.sleep(1)
+            
+        return True
     except Exception as e:
-        print(f"Lỗi khi xử lý file ảnh {file_path}: {str(e)}")
+        print(f"Lỗi khi xử lý file ảnh {file.filename}: {str(e)}")
         return False
 
 # Hàm chuyển đổi mã ngôn ngữ thành tên
