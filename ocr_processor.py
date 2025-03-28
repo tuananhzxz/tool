@@ -1,30 +1,60 @@
 import os
-import pytesseract
 from PIL import Image
 import google.generativeai as genai
 from docx import Document
 import re
+import io
 
 class OCRProcessor:
     def __init__(self, api_key=None):
         # Cấu hình Gemini nếu có API key
         if api_key:
             genai.configure(api_key=api_key)
-            self.model = genai.GenerativeModel('gemini-pro')
+            self.model = genai.GenerativeModel('gemini-2.5-pro-exp-03-25')
         else:
             self.model = None
-        
-        # Đường dẫn đến Tesseract
-        pytesseract.pytesseract.tesseract_cmd = '/usr/local/bin/tesseract'
 
     def process_image(self, image_path):
         """Xử lý OCR cho một ảnh với nhiều ngôn ngữ"""
         try:
             # Đọc ảnh
             with Image.open(image_path) as img:
-                # Thực hiện OCR với nhiều ngôn ngữ
-                text = pytesseract.image_to_string(img, lang='vie+eng+chi_sim+jpn+kor')
-                return text.strip()
+                # Chuyển ảnh sang bytes
+                img_byte_arr = io.BytesIO()
+                img.save(img_byte_arr, format='PNG')
+                img_byte_arr = img_byte_arr.getvalue()
+                
+                # Tạo prompt cho việc nhận dạng văn bản
+                prompt = """
+                    NHIỆM VỤ: Nhận dạng và trích xuất văn bản từ ảnh với độ chính xác cao nhất.
+                    
+                    YÊU CẦU CHẤT LƯỢNG:
+                    1. Nhận dạng chính xác 100% nội dung văn bản, kể cả chữ nhỏ
+                    2. Phân biệt rõ các đoạn văn bản khác nhau, các bóng thoại khác nhau
+                    3. Giữ nguyên vị trí và thứ tự của các bóng thoại
+                    4. Không bỏ sót bất kỳ ký tự nào
+                    
+                    QUY TẮC XỬ LÝ:
+                    1. Loại bỏ các yếu tố không phải văn bản 
+                    2. QUAN TRỌNG: Xử lý mỗi bóng thoại (speech bubble) như MỘT CÂU HOÀN CHỈNH TRÊN MỘT DÒNG DUY NHẤT
+                    3. Mỗi bóng thoại riêng biệt sẽ được xuất ra thành một dòng văn bản riêng biệt
+                    4. Giữ nguyên các dấu câu và định dạng đặc biệt
+                    
+                    ĐỊNH DẠNG ĐẦU RA:
+                    - Mỗi bóng thoại trên một dòng riêng
+                    - Giữ nguyên các dấu câu và định dạng
+                    - Không thêm bất kỳ chú thích hay giải thích nào
+                    - Không tách văn bản trong một bóng thoại thành nhiều dòng
+                """
+                
+                # Gửi yêu cầu đến Gemini API
+                response = self.model.generate_content([
+                    prompt,
+                    {"mime_type": "image/png", "data": img_byte_arr}
+                ])
+                
+                return response.text.strip()
+                
         except Exception as e:
             print(f"Lỗi khi xử lý OCR cho {image_path}: {str(e)}")
             return ""
