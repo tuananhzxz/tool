@@ -43,7 +43,7 @@ pyasn1==0.6.1
 pyasn1_modules==0.4.1
 pydantic==2.10.6
 pydantic_core==2.27.2
-pytesseract==0.3.13
+pytesseract==0.3.10
 python-docx==1.1.0
 python-dotenv==1.0.1
 requests==2.31.0
