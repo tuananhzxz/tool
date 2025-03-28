@@ -1,15 +1,16 @@
 import os
-from PIL import Image
+from PIL import Image, ImageDraw, ImageEnhance
 import google.generativeai as genai
 import numpy as np
 from io import BytesIO
+import cv2
 
 class SpeechBubbleProcessor:
     def __init__(self, api_key=None):
         self.api_key = api_key
         if api_key:
             genai.configure(api_key=api_key)
-            self.model = genai.GenerativeModel('gemini-pro-vision')
+            self.model = genai.GenerativeModel('gemini-2.5-pro-exp-03-25')
     
     def process_image(self, image_path):
         """
@@ -22,28 +23,51 @@ class SpeechBubbleProcessor:
                 if img.mode != 'RGB':
                     img = img.convert('RGB')
                 
-                # Lưu ảnh vào buffer để gửi cho Gemini
-                img_buffer = BytesIO()
-                img.save(img_buffer, format='JPEG')
-                img_buffer.seek(0)
+                # Chuyển sang numpy array để xử lý với OpenCV
+                img_array = np.array(img)
                 
-                # Sử dụng Gemini để nhận diện bóng thoại
-                if self.api_key:
-                    prompt = """
-                    Hãy phân tích ảnh và cho tôi biết:
-                    1. Vị trí của các bóng thoại (tọa độ x, y, chiều rộng, chiều cao)
-                    2. Màu nền của bóng thoại
-                    3. Độ trong suốt của bóng thoại
-                    """
-                    
-                    response = self.model.generate_content([prompt, img_buffer])
-                    bubble_info = response.text
-                    
-                    # Xử lý thông tin từ Gemini để xóa bóng thoại
-                    # TODO: Implement bubble removal logic based on Gemini response
+                # Chuyển sang grayscale
+                gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
                 
-                # Tạm thời trả về ảnh gốc
-                return img
+                # Áp dụng Gaussian blur để giảm nhiễu
+                blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+                
+                # Phát hiện cạnh với Canny
+                edges = cv2.Canny(blurred, 50, 150)
+                
+                # Tìm contours
+                contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                
+                # Lọc contours theo diện tích và tỷ lệ khung hình
+                min_area = 1000  # Diện tích tối thiểu
+                max_area = img_array.shape[0] * img_array.shape[1] * 0.8  # Diện tích tối đa (80% ảnh)
+                
+                for contour in contours:
+                    area = cv2.contourArea(contour)
+                    if min_area < area < max_area:
+                        # Lấy khung chứa contour
+                        x, y, w, h = cv2.boundingRect(contour)
+                        
+                        # Tính tỷ lệ khung hình
+                        aspect_ratio = float(w) / h
+                        
+                        # Lọc theo tỷ lệ khung hình (bóng thoại thường có tỷ lệ 1:1 đến 3:1)
+                        if 0.5 < aspect_ratio < 3.0:
+                            # Tạo mask cho vùng bóng thoại
+                            mask = np.zeros_like(gray)
+                            cv2.drawContours(mask, [contour], -1, (255), -1)
+                            
+                            # Áp dụng mask để xóa vùng bóng thoại
+                            img_array[mask == 255] = [255, 255, 255]  # Thay thế bằng màu trắng
+                
+                # Chuyển lại thành PIL Image
+                result_img = Image.fromarray(img_array)
+                
+                # Tăng độ tương phản
+                enhancer = ImageEnhance.Contrast(result_img)
+                result_img = enhancer.enhance(1.2)
+                
+                return result_img
                 
         except Exception as e:
             raise Exception(f"Lỗi khi xử lý ảnh: {str(e)}")

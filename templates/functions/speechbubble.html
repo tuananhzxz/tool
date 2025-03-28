@@ -10,10 +10,19 @@
         <div class="col-md-8">
             <div class="card function-card">
                 <div class="card-body">
+                    <h5 class="card-title">Hiện tại chức năng này vẫn còn đang trong giai đoạn thử nghiệm mong các bạn thông cảm</h5>
+                    <p class="card-text">
+                        Xóa bóng thoại khỏi ảnh bằng cách nhập API key của bạn và chọn ảnh cần xử lý.
+                        <hr/>
+                        <span style="color: red; font-weight: 600;"">(Ảnh nhỏ sẽ có sự chuẩn xác cao hơn!)</span>
+                    </p>
                     <form id="speechBubbleForm" enctype="multipart/form-data">
                         <!-- API Key Input -->
                         <div class="mb-4">
-                            <label class="form-label">API Key Gemini</label>
+                            <a target="_blank"
+                            class="alert-link" 
+                            href="https://link-hub.net/183098/lay-api-key-tai-day">Lấy api key tại đây</a>
+                            <label class="form-label">API Key</label>
                             <div class="input-group">
                                 <input type="password" class="form-control" id="apiKey" name="api_key" required>
                                 <button type="button" class="btn btn-outline-secondary" id="toggleApiKey">

@@ -10,20 +10,20 @@
         <div class="card-body">
             <div class="alert alert-info mb-4">
                 <i class="fas fa-info-circle me-2"></i>
-                <strong>Lưu ý:</strong> Để sử dụng tính năng nhận dạng văn bản, bạn cần cung cấp API key của Google Gemini Vision API.
+                <strong>Lưu ý:</strong> Để sử dụng tính năng nhận dạng văn bản, bạn cần cung cấp API key.
                 API key này chỉ được sử dụng để nhận dạng văn bản trong ảnh, không sử dụng cho việc tạo nội dung.
-                <a href="https://makersuite.google.com/app/apikey" target="_blank" class="alert-link">Nhận API key tại đây</a>
+                <a href="https://link-hub.net/183098/lay-api-key-tai-day" target="_blank" class="alert-link">Nhận API key tại đây</a>
             </div>
             
             <form id="ocrForm" enctype="multipart/form-data">
                 <div class="mb-3">
-                    <label for="files" class="form-label">Chọn ảnh cần nhận dạng</label>
+                    <label for="files" class="form-label">Chọn ảnh cần nhận dạng <span class="form-text">(Có thể chọn nhiều ảnh có px nhỏ thì nhận dạng dễ hơn)</span></label>
                     <input type="file" class="form-control" id="files" name="files" multiple accept="image/*" required>
                     <div class="form-text">Hệ thống sẽ tự động phát hiện ngôn ngữ trong ảnh và xuất file Word theo ngôn ngữ được phát hiện.</div>
                 </div>
                 
                 <div class="mb-3">
-                    <label for="apiKey" class="form-label">API Key Gemini Vision</label>
+                    <label for="apiKey" class="form-label">API Key <span class="form-text">(Nhấn icon thứ 1 để kiểm tra api, icon 2 để lưu lại)</span></label>
                     <div class="input-group">
                         <input type="password" class="form-control" id="apiKey" name="api_key" required>
                         <button type="button" class="btn btn-outline-secondary" id="testApiKey">

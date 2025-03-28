@@ -1,0 +1,188 @@
+{% extends "base.html" %} {% block title %}Thêm Logo - Image Processing Tools{%
+endblock %} {% block content %}
+<div class="container">
+  <h1 class="page-title">Thêm Logo vào ảnh</h1>
+
+  <div class="row justify-content-center">
+    <div class="col-md-8">
+      <div class="card function-card">
+        <div class="card-body">
+          <p class="card-text">
+            Thêm logo vào ảnh bằng cách chọn file logo và vị trí đặt logo.
+          </p>
+          <form id="addLogoForm" enctype="multipart/form-data">
+            <!-- Logo Upload -->
+            <div class="mb-4">
+              <label class="form-label">Chọn Logo</label>
+              <input
+                type="file"
+                class="form-control"
+                id="logo"
+                name="logo"
+                accept="image/*"
+                required
+              />
+              <div class="form-text">Chọn file logo (PNG, JPG, JPEG)</div>
+            </div>
+
+            <!-- Image Upload -->
+            <div class="mb-4">
+              <label class="form-label">Chọn ảnh cần thêm logo</label>
+              <input
+                type="file"
+                class="form-control"
+                id="files"
+                name="files"
+                multiple
+                accept="image/*"
+                required
+              />
+              <div class="form-text">Bạn có thể chọn nhiều ảnh cùng lúc</div>
+            </div>
+
+            <!-- Logo Position -->
+            <div class="mb-4">
+              <label class="form-label">Vị trí Logo</label>
+              <select
+                class="form-select"
+                id="position"
+                name="position"
+                required
+              >
+                <option value="top_left">Trên trái</option>
+                <option value="top_right">Trên phải</option>
+                <option value="bottom_left">Dưới trái</option>
+                <option value="bottom_right">Dưới phải</option>
+                <option value="center">Giữa</option>
+                <option value="top_center">Trên giữa</option>
+                <option value="bottom_center">Dưới giữa</option>
+                <option value="left_center">Giữa trái</option>
+                <option value="right_center">Giữa phải</option>
+              </select>
+            </div>
+
+            <!-- Logo Scale -->
+            <div class="mb-4">
+              <label class="form-label">Kích thước Logo (%)</label>
+              <input
+                type="range"
+                class="form-range"
+                id="scale"
+                name="scale"
+                min="1"
+                max="50"
+                value="10"
+              />
+              <div class="form-text">
+                Điều chỉnh kích thước logo so với ảnh gốc
+              </div>
+            </div>
+
+            <!-- Preview Section -->
+            <div id="previewSection" class="mb-4 d-none">
+              <h5>Xem trước ảnh đã chọn</h5>
+              <div class="row g-3" id="imagePreview"></div>
+            </div>
+
+            <!-- Submit Button -->
+            <div class="text-center">
+              <button type="submit" class="btn btn-primary">
+                <i class="fas fa-plus me-2"></i>Thêm Logo
+              </button>
+            </div>
+          </form>
+
+          <!-- Result Section -->
+          <div id="resultSection" class="mt-4 d-none">
+            <div class="alert alert-success">
+              <i class="fas fa-check-circle me-2"></i>
+              <span id="resultMessage"></span>
+            </div>
+            <div class="text-center">
+              <a href="#" id="downloadLink" class="btn btn-success">
+                <i class="fas fa-download me-2"></i>Tải xuống kết quả
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %} {% block scripts %}
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    // Preview images
+    document.getElementById("files").addEventListener("change", function (e) {
+      const previewSection = document.getElementById("previewSection");
+      const imagePreview = document.getElementById("imagePreview");
+      imagePreview.innerHTML = "";
+
+      if (this.files.length > 0) {
+        previewSection.classList.remove("d-none");
+
+        for (let file of this.files) {
+          const reader = new FileReader();
+          reader.onload = function (e) {
+            const col = document.createElement("div");
+            col.className = "col-md-4";
+            col.innerHTML = `
+                        <div class="card">
+                            <img src="${e.target.result}" class="card-img-top" alt="Preview">
+                            <div class="card-body">
+                                <p class="card-text small">${file.name}</p>
+                            </div>
+                        </div>
+                    `;
+            imagePreview.appendChild(col);
+          };
+          reader.readAsDataURL(file);
+        }
+      } else {
+        previewSection.classList.add("d-none");
+      }
+    });
+
+    // Handle form submission
+    document
+      .getElementById("addLogoForm")
+      .addEventListener("submit", async function (e) {
+        e.preventDefault();
+
+        const submitBtn = this.querySelector('button[type="submit"]');
+        const originalBtnText = submitBtn.innerHTML;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML =
+          '<i class="fas fa-spinner fa-spin me-2"></i>Đang xử lý...';
+
+        try {
+          const formData = new FormData(this);
+          const response = await fetch("/add_logo", {
+            method: "POST",
+            body: formData,
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            document.getElementById("resultMessage").textContent =
+              result.message;
+            document.getElementById("downloadLink").href = result.download_url;
+            document.getElementById("resultSection").classList.remove("d-none");
+          } else {
+            throw new Error(result.error || "Có lỗi xảy ra");
+          }
+        } catch (error) {
+          Swal.fire({
+            icon: "error",
+            title: "Lỗi",
+            text: error.message,
+          });
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = originalBtnText;
+        }
+      });
+  });
+</script>
+{% endblock %}

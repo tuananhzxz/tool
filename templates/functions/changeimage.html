@@ -6,21 +6,59 @@
 <div class="container">
     <h2 class="mb-4">Chuyển đổi ảnh</h2>
     
+    <div class="card mb-4">
+        <div class="card-header bg-light">
+            <h5 class="mb-0">Các định dạng chuyển đổi hỗ trợ</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="card h-100">
+                        <div class="card-header">WebP</div>
+                        <div class="card-body">
+                            <p>Định dạng hiện đại, kích thước nhỏ, chất lượng cao</p>
+                            <p><strong>Chuyển đổi từ:</strong> JPG, PNG, GIF</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card h-100">
+                        <div class="card-header">JPEG/JPG</div>
+                        <div class="card-body">
+                            <p>Định dạng phổ biến, tương thích cao</p>
+                            <p><strong>Chuyển đổi từ:</strong> PNG, WebP, GIF</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card h-100">
+                        <div class="card-header">PNG</div>
+                        <div class="card-body">
+                            <p>Hỗ trợ trong suốt, không mất dữ liệu</p>
+                            <p><strong>Chuyển đổi từ:</strong> JPG, WebP, GIF</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
     <div class="card">
         <div class="card-body">
             <form id="uploadForm" enctype="multipart/form-data">
                 <div class="mb-3">
                     <label for="target_format" class="form-label">Chọn định dạng đích:</label>
                     <select class="form-select" id="target_format" name="target_format">
-                        <option value="webp">WebP</option>
-                        <option value="jpeg">JPEG</option>
-                        <option value="png">PNG</option>
+                        <option value="webp">WebP (nhỏ gọn, chất lượng cao)</option>
+                        <option value="jpeg">JPEG (tương thích rộng rãi)</option>
+                        <option value="png">PNG (hỗ trợ trong suốt)</option>
                     </select>
                 </div>
                 
                 <div class="mb-3">
                     <label for="files" class="form-label">Chọn ảnh cần chuyển đổi:</label>
                     <input type="file" class="form-control" id="files" name="files" multiple accept="image/*" required>
+                    <div class="form-text">Hỗ trợ các định dạng: JPG, PNG, WebP, GIF</div>
                 </div>
                 
                 <button type="submit" class="btn btn-primary">
@@ -36,6 +74,12 @@
             <div class="card-body">
                 <h6 class="card-title">Kết quả xử lý</h6>
                 <p id="message" class="alert"></p>
+                <div id="conversionDetails" class="mb-3" style="display: none;">
+                    <h6>Chi tiết chuyển đổi:</h6>
+                    <ul id="conversionList" class="list-group list-group-flush">
+                        <!-- Danh sách chuyển đổi sẽ được thêm vào đây -->
+                    </ul>
+                </div>
                 <div id="downloadButtons">
                     <!-- Nút tải xuống sẽ được thêm vào đây -->
                 </div>
@@ -71,14 +115,31 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const resultArea = document.getElementById('resultArea');
             const messageArea = document.getElementById('message');
+            const conversionDetails = document.getElementById('conversionDetails');
+            const conversionList = document.getElementById('conversionList');
             const downloadButtons = document.getElementById('downloadButtons');
             
             if (result.error) {
                 messageArea.className = 'alert alert-danger';
                 messageArea.textContent = result.error;
+                conversionDetails.style.display = 'none';
             } else {
                 messageArea.className = 'alert alert-success';
                 messageArea.textContent = result.message;
+                
+                // Hiển thị chi tiết chuyển đổi nếu có
+                if (result.conversions && result.conversions.length > 0) {
+                    conversionList.innerHTML = '';
+                    result.conversions.forEach(conversion => {
+                        const li = document.createElement('li');
+                        li.className = 'list-group-item';
+                        li.innerHTML = `<i class="fas fa-exchange-alt me-2"></i>${conversion}`;
+                        conversionList.appendChild(li);
+                    });
+                    conversionDetails.style.display = 'block';
+                } else {
+                    conversionDetails.style.display = 'none';
+                }
                 
                 // Xóa các nút tải xuống cũ
                 downloadButtons.innerHTML = '';
@@ -108,4 +169,4 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
-{% endblock %} 
+{% endblock %}
