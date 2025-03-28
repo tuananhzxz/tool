@@ -29,12 +29,11 @@ load_dotenv()
 
 app = Flask(__name__, static_folder='public')
 CORS(app)
-app.config['UPLOAD_FOLDER'] = os.path.join(os.getcwd(), 'tmp')
+app.config['UPLOAD_FOLDER'] = '/tmp'
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max-limit
 
-# Đảm bảo thư mục uploads tồn tại
-if not os.path.exists(app.config['UPLOAD_FOLDER']):
-    os.makedirs(app.config['UPLOAD_FOLDER'])
+# Create temporary directory if it doesn't exist
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 
 # Hàm xử lý lỗi chung
